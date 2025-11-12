@@ -2,7 +2,7 @@
 """
 Cluster Configuration Management
 
-Manages multi-backplane Z1 cluster configurations with multiple controllers.
+Manages multi-backplane Z1 cluster configurations with environment variable support.
 """
 
 import os
@@ -21,18 +21,18 @@ class BackplaneConfig:
     description: str = ""
     
     def __str__(self):
-        return f"{self.name} ({self.controller_ip})"
+        return f"{self.name} ({self.controller_ip}:{self.controller_port})"
 
 
 class ClusterConfig:
-    """Multi-backplane cluster configuration."""
+    """Multi-backplane cluster configuration with environment variable support."""
     
     def __init__(self, config_file: Optional[str] = None):
         """
         Initialize cluster configuration.
         
         Args:
-            config_file: Path to configuration file (JSON or YAML)
+            config_file: Path to configuration file (JSON)
         """
         self.backplanes: List[BackplaneConfig] = []
         self.config_file = config_file
@@ -42,6 +42,10 @@ class ClusterConfig:
         else:
             # Try default locations
             self._load_default_config()
+        
+        # If no config loaded, try environment variables
+        if not self.backplanes:
+            self._load_from_environment()
     
     def _load_default_config(self):
         """Load configuration from default locations."""
@@ -55,6 +59,37 @@ class ClusterConfig:
             if os.path.exists(path):
                 self.load(path)
                 return
+    
+    def _load_from_environment(self):
+        """Load configuration from environment variables."""
+        controller_ip = os.environ.get('Z1_CONTROLLER_IP')
+        controller_port_str = os.environ.get('Z1_CONTROLLER_PORT')
+        
+        if controller_ip:
+            # Auto-detect port based on IP if not explicitly set
+            if controller_port_str:
+                try:
+                    controller_port = int(controller_port_str)
+                except ValueError:
+                    controller_port = self._auto_detect_port(controller_ip)
+            else:
+                controller_port = self._auto_detect_port(controller_ip)
+            
+            self.backplanes.append(BackplaneConfig(
+                name='env-backplane',
+                controller_ip=controller_ip,
+                controller_port=controller_port,
+                node_count=16,
+                description='From environment variables'
+            ))
+    
+    def _auto_detect_port(self, ip: str) -> int:
+        """Auto-detect port based on IP address."""
+        # Localhost/127.0.0.1 → emulator (port 8000)
+        if ip in ['127.0.0.1', 'localhost']:
+            return 8000
+        # Real hardware → port 80
+        return 80
     
     def load(self, config_file: str):
         """
@@ -106,7 +141,7 @@ class ClusterConfig:
         }
         
         # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(config_file), exist_ok=True)
+        os.makedirs(os.path.dirname(os.path.abspath(config_file)), exist_ok=True)
         
         with open(config_file, 'w') as f:
             json.dump(config_data, f, indent=2)
@@ -140,6 +175,64 @@ class ClusterConfig:
     def get_total_nodes(self) -> int:
         """Get total number of nodes across all backplanes."""
         return sum(bp.node_count for bp in self.backplanes)
+    
+    def get_default_backplane(self) -> BackplaneConfig:
+        """
+        Get default backplane with smart detection.
+        
+        Priority:
+        1. Environment variable Z1_CONTROLLER_IP
+        2. First backplane in config
+        3. Auto-detect emulator at localhost:8000
+        4. Default to real hardware at 192.168.1.222:80
+        """
+        # Check environment variable
+        controller_ip = os.environ.get('Z1_CONTROLLER_IP')
+        if controller_ip:
+            controller_port_str = os.environ.get('Z1_CONTROLLER_PORT')
+            if controller_port_str:
+                try:
+                    controller_port = int(controller_port_str)
+                except ValueError:
+                    controller_port = self._auto_detect_port(controller_ip)
+            else:
+                controller_port = self._auto_detect_port(controller_ip)
+            
+            return BackplaneConfig(
+                name='default',
+                controller_ip=controller_ip,
+                controller_port=controller_port,
+                node_count=16,
+                description='From environment'
+            )
+        
+        # Return first backplane if available
+        if self.backplanes:
+            return self.backplanes[0]
+        
+        # Try to auto-detect emulator
+        try:
+            import requests
+            response = requests.get('http://127.0.0.1:8000/api/emulator/status', timeout=0.5)
+            if response.status_code == 200 and response.json().get('emulator'):
+                return BackplaneConfig(
+                    name='emulator',
+                    controller_ip='127.0.0.1',
+                    controller_port=8000,
+                    node_count=16,
+                    description='Auto-detected emulator'
+                )
+        except:
+            pass
+        
+        # Default to real hardware
+        return BackplaneConfig(
+            name='default',
+            controller_ip='192.168.1.222',
+            controller_port=80,
+            node_count=16,
+            description='Default hardware'
+        )
     
     def __len__(self):
         """Return number of backplanes."""

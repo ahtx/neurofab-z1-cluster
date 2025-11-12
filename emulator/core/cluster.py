@@ -8,7 +8,7 @@ import time
 import threading
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-from .node import ComputeNode, NodeStatus
+from node import ComputeNode, NodeStatus
 
 
 @dataclass

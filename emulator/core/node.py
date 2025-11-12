@@ -302,12 +302,15 @@ class ComputeNode:
     
     def get_info(self) -> Dict:
         """Get node information."""
+        free_mem = self.get_free_memory()
         return {
+            'id': self.node_id,  # Tools expect 'id' field
             'node_id': self.node_id,
             'backplane_id': self.backplane_id,
             'status': self.status.name.lower(),
             'uptime_ms': self.get_uptime_ms(),
-            'free_memory': self.get_free_memory(),
+            'memory_free': free_mem,  # Tools expect 'memory_free' field
+            'free_memory': free_mem,
             'led_state': {
                 'r': self.led.r,
                 'g': self.led.g,

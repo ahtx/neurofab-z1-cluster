@@ -10,8 +10,8 @@ import struct
 from flask import Flask, request, jsonify
 from typing import Optional
 
-from .cluster import Cluster
-from .snn_engine import ClusterSNNCoordinator, Spike
+from cluster import Cluster
+from snn_engine import ClusterSNNCoordinator, Spike
 
 
 class Z1APIServer:

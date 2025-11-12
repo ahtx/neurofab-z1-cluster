@@ -126,6 +126,28 @@ For detailed information on the firmware architecture and build process, see the
 - **Real-Time Monitoring**: Utilities to monitor cluster status and SNN spike activity in real-time (`nstat`, `nsnn monitor`).
 - **Scalable Architecture**: Designed to manage everything from a single backplane (16 nodes) to a full multi-rack system (200+ nodes).
 
+## 🖥️ Emulator
+
+A complete software emulator is included for development and testing without physical hardware:
+
+```bash
+cd emulator
+python3 z1_emulator.py
+
+# In another terminal
+export Z1_CONTROLLER_IP=127.0.0.1
+./tools/nls
+./tools/nsnn deploy examples/xor_snn.json
+```
+
+**Features:**
+- Simulates multi-backplane clusters (200+ nodes)
+- Full SNN execution with LIF neurons
+- Compatible with all Z1 tools
+- Perfect for development, testing, and demos
+
+See **[Emulator README](emulator/README.md)** for complete documentation.
+
 ## 🔧 Firmware Architecture
 
 The Z1 system uses a **two-stage bootloader architecture** that allows you to flash custom firmware to compute nodes remotely:

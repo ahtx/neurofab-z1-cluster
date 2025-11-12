@@ -13,6 +13,18 @@ A complete software emulation of the NeuroFab Z1 neuromorphic computing cluster.
 - ✅ **Tool Compatibility** - Works with all existing Z1 tools (nls, nsnn, nflash, etc.)
 - ✅ **Real-time or Fast Mode** - Run at wall-clock speed or as fast as possible
 
+## Recent Fixes
+
+**All known issues have been fixed!**
+
+- ✅ Python import errors resolved
+- ✅ API field compatibility fixed
+- ✅ Hardcoded IPs/ports removed
+- ✅ Environment variable support added
+- ✅ Auto-detection implemented
+
+See [FIXES_APPLIED.md](../FIXES_APPLIED.md) for details.
+
 ## Quick Start
 
 ### Installation
@@ -40,17 +52,40 @@ python3 z1_emulator.py --create-config my_config.json
 
 ### Use the Tools
 
+**Option 1: Quick Start Script (Recommended)**
 ```bash
-# In another terminal, use the tools
+# Automated setup and demo
+./quick_start.sh
+```
+
+**Option 2: Environment Setup**
+```bash
+# In another terminal
+source set_emulator_env.sh
+
+# Tools now work without -c flag
+nls
+nsnn deploy examples/xor_snn.json
+nsnn start
+nsnn monitor 5000
+```
+
+**Option 3: Manual Environment**
+```bash
+# Set environment variables
 export Z1_CONTROLLER_IP=127.0.0.1
+export Z1_CONTROLLER_PORT=8000
 
-# List nodes
+# Use tools
 ./tools/nls
-
-# Deploy and run an SNN
 ./tools/nsnn deploy examples/xor_snn.json
-./tools/nsnn start
-./tools/nsnn monitor 5000
+```
+
+**Option 4: Explicit Controller**
+```bash
+# Specify controller with -c flag
+./tools/nls -c 127.0.0.1
+./tools/nsnn deploy examples/xor_snn.json -c 127.0.0.1
 ```
 
 ## Directory Structure
