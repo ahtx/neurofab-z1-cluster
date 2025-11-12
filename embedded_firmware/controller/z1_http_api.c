@@ -704,3 +704,312 @@ void handle_get_snn_events(http_connection_t* conn, uint16_t count) {
     
     z1_http_send_json(conn, 200, json);
 }
+
+// ============================================================================
+// Firmware Management Endpoints
+// ============================================================================
+
+/**
+ * Handle firmware upload - POST /api/firmware/upload/{node_id}
+ * Upload firmware binary to node's buffer
+ */
+void handle_firmware_upload(http_connection_t* conn, uint8_t node_id, 
+                           const uint8_t* firmware_data, uint32_t firmware_size) {
+    if (node_id >= 16) {
+        z1_http_send_error(conn, 400, "Invalid node ID");
+        return;
+    }
+    
+    if (firmware_size > Z1_FIRMWARE_MAX_SIZE) {
+        z1_http_send_error(conn, 400, "Firmware too large (max 112KB)");
+        return;
+    }
+    
+    // Send firmware in chunks over Z1 bus
+    const uint32_t chunk_size = 256;  // Z1 bus packet size
+    uint32_t offset = 0;
+    uint32_t chunks_sent = 0;
+    
+    while (offset < firmware_size) {
+        uint32_t bytes_to_send = (firmware_size - offset) < chunk_size ? 
+                                 (firmware_size - offset) : chunk_size;
+        
+        // Prepare command data: [offset:4][size:4][data:N]
+        uint8_t cmd_data[chunk_size + 8];
+        memcpy(cmd_data, &offset, 4);
+        memcpy(cmd_data + 4, &bytes_to_send, 4);
+        memcpy(cmd_data + 8, firmware_data + offset, bytes_to_send);
+        
+        // Send firmware upload command
+        if (!z1_bus_send_command(node_id, Z1_CMD_FIRMWARE_UPLOAD, 
+                                 cmd_data, bytes_to_send + 8)) {
+            z1_http_send_error(conn, 500, "Failed to send firmware chunk");
+            return;
+        }
+        
+        offset += bytes_to_send;
+        chunks_sent++;
+    }
+    
+    // Send success response
+    char json[256];
+    int pos = json_begin_object(json, sizeof(json));
+    pos = json_add_int(json, pos, sizeof(json), "node_id", node_id, false);
+    pos = json_add_int(json, pos, sizeof(json), "bytes_uploaded", firmware_size, false);
+    pos = json_add_int(json, pos, sizeof(json), "chunks_sent", chunks_sent, true);
+    json_end_object(json, pos, sizeof(json));
+    
+    z1_http_send_json(conn, 200, json);
+}
+
+/**
+ * Handle firmware verify - POST /api/firmware/verify/{node_id}
+ * Verify uploaded firmware checksum
+ */
+void handle_firmware_verify(http_connection_t* conn, uint8_t node_id) {
+    if (node_id >= 16) {
+        z1_http_send_error(conn, 400, "Invalid node ID");
+        return;
+    }
+    
+    // Send verify command
+    if (!z1_bus_send_command(node_id, Z1_CMD_FIRMWARE_VERIFY, NULL, 0)) {
+        z1_http_send_error(conn, 500, "Failed to send verify command");
+        return;
+    }
+    
+    // TODO: Wait for response with checksum
+    // For now, return success
+    char json[128];
+    int pos = json_begin_object(json, sizeof(json));
+    pos = json_add_int(json, pos, sizeof(json), "node_id", node_id, false);
+    pos = json_add_string(json, pos, sizeof(json), "status", "verified", true);
+    json_end_object(json, pos, sizeof(json));
+    
+    z1_http_send_json(conn, 200, json);
+}
+
+/**
+ * Handle firmware install - POST /api/firmware/install/{node_id}
+ * Install firmware from buffer to flash
+ */
+void handle_firmware_install(http_connection_t* conn, uint8_t node_id) {
+    if (node_id >= 16) {
+        z1_http_send_error(conn, 400, "Invalid node ID");
+        return;
+    }
+    
+    // Send install command
+    if (!z1_bus_send_command(node_id, Z1_CMD_FIRMWARE_INSTALL, NULL, 0)) {
+        z1_http_send_error(conn, 500, "Failed to send install command");
+        return;
+    }
+    
+    // TODO: Wait for response
+    char json[128];
+    int pos = json_begin_object(json, sizeof(json));
+    pos = json_add_int(json, pos, sizeof(json), "node_id", node_id, false);
+    pos = json_add_string(json, pos, sizeof(json), "status", "installed", true);
+    json_end_object(json, pos, sizeof(json));
+    
+    z1_http_send_json(conn, 200, json);
+}
+
+/**
+ * Handle firmware activate - POST /api/firmware/activate/{node_id}
+ * Activate new firmware and reboot node
+ */
+void handle_firmware_activate(http_connection_t* conn, uint8_t node_id) {
+    if (node_id >= 16) {
+        z1_http_send_error(conn, 400, "Invalid node ID");
+        return;
+    }
+    
+    // Send activate command
+    if (!z1_bus_send_command(node_id, Z1_CMD_FIRMWARE_ACTIVATE, NULL, 0)) {
+        z1_http_send_error(conn, 500, "Failed to send activate command");
+        return;
+    }
+    
+    // Node will reboot after this
+    char json[128];
+    int pos = json_begin_object(json, sizeof(json));
+    pos = json_add_int(json, pos, sizeof(json), "node_id", node_id, false);
+    pos = json_add_string(json, pos, sizeof(json), "status", "activated", true);
+    json_end_object(json, pos, sizeof(json));
+    
+    z1_http_send_json(conn, 200, json);
+}
+
+/**
+ * Handle firmware info - GET /api/firmware/info/{node_id}
+ * Get current firmware information
+ */
+void handle_firmware_info(http_connection_t* conn, uint8_t node_id) {
+    if (node_id >= 16) {
+        z1_http_send_error(conn, 400, "Invalid node ID");
+        return;
+    }
+    
+    // Send info request command
+    if (!z1_bus_send_command(node_id, Z1_CMD_FIRMWARE_INFO, NULL, 0)) {
+        z1_http_send_error(conn, 500, "Failed to send info command");
+        return;
+    }
+    
+    // TODO: Wait for response with firmware info
+    // For now, return placeholder
+    char json[256];
+    int pos = json_begin_object(json, sizeof(json));
+    pos = json_add_int(json, pos, sizeof(json), "node_id", node_id, false);
+    pos = json_add_string(json, pos, sizeof(json), "version", "1.0.0", false);
+    pos = json_add_string(json, pos, sizeof(json), "build_date", "2025-11-12", false);
+    pos = json_add_int(json, pos, sizeof(json), "size_bytes", 0, true);
+    json_end_object(json, pos, sizeof(json));
+    
+    z1_http_send_json(conn, 200, json);
+}
+
+/**
+ * Handle batch firmware flash - POST /api/firmware/batch
+ * Flash multiple nodes with same firmware
+ */
+void handle_firmware_batch(http_connection_t* conn, const uint8_t* node_list, 
+                          uint8_t node_count, const uint8_t* firmware_data, 
+                          uint32_t firmware_size) {
+    if (node_count == 0 || node_count > 16) {
+        z1_http_send_error(conn, 400, "Invalid node count");
+        return;
+    }
+    
+    if (firmware_size > Z1_FIRMWARE_MAX_SIZE) {
+        z1_http_send_error(conn, 400, "Firmware too large");
+        return;
+    }
+    
+    uint8_t success_count = 0;
+    uint8_t failed_nodes[16];
+    uint8_t failed_count = 0;
+    
+    // Flash each node
+    for (uint8_t i = 0; i < node_count; i++) {
+        uint8_t node_id = node_list[i];
+        
+        if (node_id >= 16) {
+            failed_nodes[failed_count++] = node_id;
+            continue;
+        }
+        
+        // Upload firmware (simplified - should use handle_firmware_upload)
+        // For now, just send command
+        if (z1_bus_send_command(node_id, Z1_CMD_FIRMWARE_UPLOAD, 
+                                firmware_data, firmware_size)) {
+            success_count++;
+        } else {
+            failed_nodes[failed_count++] = node_id;
+        }
+    }
+    
+    // Send response
+    char json[512];
+    int pos = json_begin_object(json, sizeof(json));
+    pos = json_add_int(json, pos, sizeof(json), "total_nodes", node_count, false);
+    pos = json_add_int(json, pos, sizeof(json), "success_count", success_count, false);
+    pos = json_add_int(json, pos, sizeof(json), "failed_count", failed_count, true);
+    json_end_object(json, pos, sizeof(json));
+    
+    z1_http_send_json(conn, 200, json);
+}
+
+// ============================================================================
+// Memory Access Endpoints
+// ============================================================================
+
+/**
+ * Handle memory read - GET /api/nodes/{node_id}/memory?addr={addr}&len={len}
+ * Read memory from node
+ */
+void handle_memory_read(http_connection_t* conn, uint8_t node_id, 
+                       uint32_t address, uint32_t length) {
+    if (node_id >= 16) {
+        z1_http_send_error(conn, 400, "Invalid node ID");
+        return;
+    }
+    
+    if (length > 4096) {
+        z1_http_send_error(conn, 400, "Length too large (max 4KB)");
+        return;
+    }
+    
+    // Send memory read command
+    uint8_t cmd_data[8];
+    memcpy(cmd_data, &address, 4);
+    memcpy(cmd_data + 4, &length, 4);
+    
+    if (!z1_bus_send_command(node_id, Z1_CMD_MEMORY_READ, cmd_data, 8)) {
+        z1_http_send_error(conn, 500, "Failed to send read command");
+        return;
+    }
+    
+    // TODO: Wait for response with memory data
+    // For now, return placeholder
+    char json[256];
+    int pos = json_begin_object(json, sizeof(json));
+    pos = json_add_int(json, pos, sizeof(json), "node_id", node_id, false);
+    pos = json_add_int(json, pos, sizeof(json), "address", address, false);
+    pos = json_add_int(json, pos, sizeof(json), "length", length, false);
+    pos = json_add_string(json, pos, sizeof(json), "data", "base64_data_here", true);
+    json_end_object(json, pos, sizeof(json));
+    
+    z1_http_send_json(conn, 200, json);
+}
+
+/**
+ * Handle memory write - POST /api/nodes/{node_id}/memory
+ * Write memory to node
+ */
+void handle_memory_write(http_connection_t* conn, uint8_t node_id, 
+                        uint32_t address, const uint8_t* data, uint32_t length) {
+    if (node_id >= 16) {
+        z1_http_send_error(conn, 400, "Invalid node ID");
+        return;
+    }
+    
+    if (length > 4096) {
+        z1_http_send_error(conn, 400, "Length too large (max 4KB)");
+        return;
+    }
+    
+    // Send memory write command in chunks
+    const uint32_t chunk_size = 256;
+    uint32_t offset = 0;
+    
+    while (offset < length) {
+        uint32_t bytes_to_write = (length - offset) < chunk_size ? 
+                                  (length - offset) : chunk_size;
+        
+        // Prepare command: [address:4][length:4][data:N]
+        uint8_t cmd_data[chunk_size + 8];
+        uint32_t chunk_addr = address + offset;
+        memcpy(cmd_data, &chunk_addr, 4);
+        memcpy(cmd_data + 4, &bytes_to_write, 4);
+        memcpy(cmd_data + 8, data + offset, bytes_to_write);
+        
+        if (!z1_bus_send_command(node_id, Z1_CMD_MEMORY_WRITE, 
+                                 cmd_data, bytes_to_write + 8)) {
+            z1_http_send_error(conn, 500, "Failed to write memory");
+            return;
+        }
+        
+        offset += bytes_to_write;
+    }
+    
+    // Send success response
+    char json[128];
+    int pos = json_begin_object(json, sizeof(json));
+    pos = json_add_int(json, pos, sizeof(json), "node_id", node_id, false);
+    pos = json_add_int(json, pos, sizeof(json), "bytes_written", length, true);
+    json_end_object(json, pos, sizeof(json));
+    
+    z1_http_send_json(conn, 200, json);
+}

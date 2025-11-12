@@ -16,7 +16,7 @@ class BackplaneConfig:
     """Configuration for a single backplane."""
     name: str
     controller_ip: str
-    controller_port: int = 80
+    controller_port: int = 8000  # Default to emulator port; hardware uses 80
     node_count: int = 16
     description: str = ""
     

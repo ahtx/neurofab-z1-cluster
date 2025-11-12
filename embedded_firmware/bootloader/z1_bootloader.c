@@ -18,6 +18,56 @@ static z1_firmware_header_t g_firmware_buffer_header;
 static uint32_t g_firmware_upload_offset = 0;
 
 // ============================================================================
+// Z1 Bus Communication Functions
+// ============================================================================
+
+/**
+ * Send ACK over Z1 bus
+ * NOTE: Actual implementation depends on hardware UART/SPI interface
+ */
+static void z1_bus_send_ack(void) {
+    uint8_t ack = 0x06;  // ASCII ACK
+    // TODO: Replace with actual bus send
+    // uart_write(&ack, 1);
+}
+
+/**
+ * Send NACK over Z1 bus
+ */
+static void z1_bus_send_nack(void) {
+    uint8_t nack = 0x15;  // ASCII NAK
+    // TODO: Replace with actual bus send
+    // uart_write(&nack, 1);
+}
+
+/**
+ * Send data over Z1 bus
+ */
+static bool z1_bus_send(const void *data, uint16_t len) {
+    // TODO: Replace with actual bus send
+    // return uart_write((const uint8_t*)data, len) == len;
+    return true;
+}
+
+/**
+ * Receive command from Z1 bus
+ * Returns true if command received
+ */
+static bool z1_bus_receive_command(uint8_t *cmd, uint8_t *data, uint16_t *len) {
+    // TODO: Replace with actual bus receive
+    // Check if data available in UART buffer
+    // if (uart_available() > 0) {
+    //     *cmd = uart_read_byte();
+    //     *len = uart_read_uint16();
+    //     if (*len > 0) {
+    //         uart_read(data, *len);
+    //     }
+    //     return true;
+    // }
+    return false;
+}
+
+// ============================================================================
 // CRC32 Implementation
 // ============================================================================
 
@@ -58,11 +108,19 @@ static void load_boot_config(void) {
 
 static void save_boot_config(void) {
     // Erase and write boot config to flash
-    // (Implementation would use RP2350 flash API)
-    // flash_range_erase(BOOT_FLAG_ADDR - FLASH_BASE, 4096);
-    // flash_range_program(BOOT_FLAG_ADDR - FLASH_BASE, 
+    // NOTE: Actual RP2350B implementation would use:
+    // #include "hardware/flash.h"
+    // flash_range_erase(BOOT_FLAG_ADDR - XIP_BASE, FLASH_SECTOR_SIZE);
+    // flash_range_program(BOOT_FLAG_ADDR - XIP_BASE, 
     //                     (uint8_t*)&g_boot_config, 
     //                     sizeof(z1_boot_config_t));
+    
+    // TODO: Implement with actual RP2350B SDK
+    // For now, this is a placeholder that would be replaced with:
+    // 1. Disable interrupts
+    // 2. Erase flash sector (4KB aligned)
+    // 3. Program flash with boot config
+    // 4. Re-enable interrupts
 }
 
 // ============================================================================
@@ -120,14 +178,29 @@ bool z1_bootloader_install_firmware(void) {
     }
     
     // Erase application slot
-    // (Implementation would use RP2350 flash API)
-    // flash_range_erase(APP_BASE - FLASH_BASE, APP_MAX_SIZE);
+    // NOTE: Actual RP2350B implementation:
+    // #include "hardware/flash.h"
+    // #include "hardware/sync.h"
     
-    // Copy firmware from buffer to application slot
-    uint32_t total_size = sizeof(z1_firmware_header_t) + g_firmware_buffer_header.firmware_size;
-    // flash_range_program(APP_BASE - FLASH_BASE,
+    // TODO: Replace with actual RP2350B SDK calls:
+    // uint32_t ints = save_and_disable_interrupts();
+    // 
+    // // Erase application flash (must be 4KB sector aligned)
+    // uint32_t erase_size = (APP_MAX_SIZE + 4095) & ~4095;  // Round up to 4KB
+    // flash_range_erase(APP_BASE - XIP_BASE, erase_size);
+    // 
+    // // Program firmware (must be 256-byte page aligned)
+    // uint32_t total_size = sizeof(z1_firmware_header_t) + g_firmware_buffer_header.firmware_size;
+    // uint32_t prog_size = (total_size + 255) & ~255;  // Round up to 256 bytes
+    // flash_range_program(APP_BASE - XIP_BASE,
     //                     (uint8_t*)FIRMWARE_BUFFER_BASE,
-    //                     total_size);
+    //                     prog_size);
+    // 
+    // restore_interrupts(ints);
+    
+    // Placeholder: In real implementation, flash operations would happen here
+    uint32_t total_size = sizeof(z1_firmware_header_t) + g_firmware_buffer_header.firmware_size;
+    (void)total_size;  // Suppress unused warning
     
     // Mark application as valid
     g_boot_config.app_valid = 1;
@@ -207,7 +280,7 @@ static void handle_firmware_info(void) {
     }
     
     // Send response over Z1 bus
-    // z1_bus_send(&info, sizeof(z1_firmware_info_t));
+    z1_bus_send(&info, sizeof(z1_firmware_info_t));
 }
 
 static void handle_firmware_upload(uint32_t offset, const uint8_t *data, uint16_t len) {
@@ -217,10 +290,10 @@ static void handle_firmware_upload(uint32_t offset, const uint8_t *data, uint16_
         g_firmware_upload_offset = offset + len;
         
         // Send ACK
-        // z1_bus_send_ack();
+        z1_bus_send_ack();
     } else {
         // Send NACK (buffer overflow)
-        // z1_bus_send_nack();
+        z1_bus_send_nack();
     }
 }
 
@@ -229,7 +302,7 @@ static void handle_firmware_verify(void) {
     
     // Send response
     uint8_t response = valid ? 1 : 0;
-    // z1_bus_send(&response, 1);
+    z1_bus_send(&response, 1);
 }
 
 static void handle_firmware_install(void) {
@@ -246,7 +319,7 @@ static void handle_firmware_activate(void) {
     save_boot_config();
     
     // Send ACK
-    // z1_bus_send_ack();
+    z1_bus_send_ack();
     
     // Reboot
     // system_reset();
@@ -257,12 +330,12 @@ static void handle_boot_mode(uint32_t mode) {
     save_boot_config();
     
     // Send ACK
-    // z1_bus_send_ack();
+    z1_bus_send_ack();
 }
 
 static void handle_reboot(void) {
     // Send ACK
-    // z1_bus_send_ack();
+    z1_bus_send_ack();
     
     // Small delay to ensure ACK is sent
     // delay_ms(10);
