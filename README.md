@@ -129,3 +129,26 @@ For detailed information on the firmware architecture and build process, see the
 ## License
 
 Copyright © 2025 NeuroFab Corp. All Rights Reserved.
+
+## 📚 New: Complete SNN Tutorial
+
+We've added a comprehensive, step-by-step tutorial that walks you through deploying SNNs on the Z1 cluster:
+
+**[SNN Tutorial: From XOR to MNIST](docs/snn_tutorial.md)**
+
+This tutorial covers:
+- Understanding the Z1 architecture
+- Deploying your first SNN (XOR logic gate)
+- Scaling to 200+ nodes with MNIST classifier
+- How all components work together
+- Best practices and troubleshooting
+
+Perfect for both beginners and advanced users!
+
+## 📖 Additional Documentation
+
+- **[System Integration Guide](docs/system_integration_guide.md)** - Deep dive into how firmware, tools, and protocols integrate
+- **[API Reference](docs/api_reference.md)** - Complete REST API documentation
+- **[User Guide](docs/user_guide.md)** - Comprehensive command reference
+- **[Multi-Backplane Guide](docs/multi_backplane_guide.md)** - Scaling to hundreds of nodes
+

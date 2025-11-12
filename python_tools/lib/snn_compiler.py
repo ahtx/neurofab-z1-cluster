@@ -3,23 +3,25 @@
 SNN Topology Compiler
 
 Compiles high-level SNN topology definitions into distributed neuron tables
-for deployment on Z1 cluster.
+for deployment on Z1 cluster. Supports multi-backplane configurations with
+hundreds of nodes.
 """
 
 import json
 import struct
 import random
 import numpy as np
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass
 
 
 @dataclass
 class NeuronConfig:
     """Configuration for a single neuron."""
-    neuron_id: int
-    global_id: int
-    node_id: int
+    neuron_id: int          # Local neuron ID on the node
+    global_id: int          # Global neuron ID across entire cluster
+    node_id: int            # Node ID (0-15) on backplane
+    backplane_id: str       # Backplane name/ID
     flags: int
     threshold: float
     leak_rate: float
@@ -27,29 +29,42 @@ class NeuronConfig:
     synapses: List[Tuple[int, int]]  # List of (source_global_id, weight)
 
 
+@dataclass
+class DeploymentPlan:
+    """Plan for deploying SNN across cluster."""
+    neuron_tables: Dict[Tuple[str, int], bytes]  # (backplane_id, node_id) -> table_data
+    neuron_map: Dict[int, Tuple[str, int, int]]  # global_id -> (backplane, node, local_id)
+    backplane_nodes: Dict[str, List[int]]        # backplane_id -> list of node_ids
+    total_neurons: int
+    total_synapses: int
+
+
 class SNNCompiler:
     """Compiles SNN topology to node-specific neuron tables."""
     
-    def __init__(self, topology: Dict[str, Any]):
+    def __init__(self, topology: Dict[str, Any], backplane_config: Optional[Dict[str, Any]] = None):
         """
         Initialize compiler with topology definition.
         
         Args:
             topology: SNN topology dictionary
+            backplane_config: Optional backplane configuration for multi-backplane deployment
         """
         self.topology = topology
+        self.backplane_config = backplane_config or {}
         self.neurons = []
-        self.node_assignments = {}
+        self.node_assignments = {}  # (backplane_id, node_id) -> [global_neuron_ids]
         self.layer_map = {}
+        self.neuron_map = {}  # global_id -> (backplane, node, local_id)
         
-    def compile(self) -> Dict[int, bytes]:
+    def compile(self) -> DeploymentPlan:
         """
         Compile topology to neuron tables.
         
         Returns:
-            Dictionary mapping node_id to neuron table binary data
+            DeploymentPlan with neuron tables and mapping information
         """
-        # Step 1: Assign neurons to nodes
+        # Step 1: Assign neurons to nodes (potentially across backplanes)
         self._assign_neurons_to_nodes()
         
         # Step 2: Build neuron configurations
@@ -61,35 +76,55 @@ class SNNCompiler:
         # Step 4: Compile neuron tables
         neuron_tables = self._compile_neuron_tables()
         
-        return neuron_tables
+        # Step 5: Build deployment plan
+        deployment_plan = self._build_deployment_plan(neuron_tables)
+        
+        return deployment_plan
     
     def _assign_neurons_to_nodes(self):
-        """Assign neurons to compute nodes."""
+        """Assign neurons to compute nodes across backplanes."""
         assignment = self.topology.get('node_assignment', {})
         strategy = assignment.get('strategy', 'balanced')
-        nodes = assignment.get('nodes', list(range(12)))
+        
+        # Get available backplanes and nodes
+        if self.backplane_config:
+            # Multi-backplane mode
+            backplanes = self.backplane_config.get('backplanes', [])
+            available_nodes = []
+            for bp in backplanes:
+                bp_name = bp['name']
+                node_count = bp.get('node_count', 16)
+                for node_id in range(node_count):
+                    available_nodes.append((bp_name, node_id))
+        else:
+            # Single backplane mode
+            nodes = assignment.get('nodes', list(range(12)))
+            backplane_name = assignment.get('backplane', 'default')
+            available_nodes = [(backplane_name, node_id) for node_id in nodes]
         
         total_neurons = self.topology['neuron_count']
         
         if strategy == 'balanced':
-            # Evenly distribute neurons across nodes
-            neurons_per_node = total_neurons // len(nodes)
+            # Evenly distribute neurons across all available nodes
+            neurons_per_node = total_neurons // len(available_nodes)
             
             neuron_id = 0
-            for node_id in nodes:
-                node_neurons = []
+            for bp_name, node_id in available_nodes:
+                key = (bp_name, node_id)
+                self.node_assignments[key] = []
+                
                 for _ in range(neurons_per_node):
                     if neuron_id < total_neurons:
-                        node_neurons.append(neuron_id)
+                        self.node_assignments[key].append(neuron_id)
                         neuron_id += 1
-                self.node_assignments[node_id] = node_neurons
             
             # Assign remaining neurons
             node_idx = 0
             while neuron_id < total_neurons:
-                self.node_assignments[nodes[node_idx]].append(neuron_id)
+                key = available_nodes[node_idx]
+                self.node_assignments[key].append(neuron_id)
                 neuron_id += 1
-                node_idx = (node_idx + 1) % len(nodes)
+                node_idx = (node_idx + 1) % len(available_nodes)
         
         elif strategy == 'layer_based':
             # Assign entire layers to nodes
@@ -100,12 +135,12 @@ class SNNCompiler:
                 start_id = layer['neuron_ids'][0]
                 end_id = layer['neuron_ids'][1]
                 
-                node_id = nodes[node_idx % len(nodes)]
-                if node_id not in self.node_assignments:
-                    self.node_assignments[node_id] = []
+                key = available_nodes[node_idx % len(available_nodes)]
+                if key not in self.node_assignments:
+                    self.node_assignments[key] = []
                 
                 for neuron_id in range(start_id, end_id + 1):
-                    self.node_assignments[node_id].append(neuron_id)
+                    self.node_assignments[key].append(neuron_id)
                 
                 node_idx += 1
     
@@ -134,13 +169,13 @@ class SNNCompiler:
             # Create neuron configs
             for global_id in range(start_id, end_id + 1):
                 # Find which node this neuron is assigned to
-                node_id = self._find_node_for_neuron(global_id)
-                local_id = self.node_assignments[node_id].index(global_id)
+                bp_name, node_id, local_id = self._find_node_for_neuron(global_id)
                 
                 neuron = NeuronConfig(
                     neuron_id=local_id,
                     global_id=global_id,
                     node_id=node_id,
+                    backplane_id=bp_name,
                     flags=flags,
                     threshold=threshold,
                     leak_rate=leak_rate,
@@ -150,12 +185,19 @@ class SNNCompiler:
                 
                 self.neurons.append(neuron)
                 self.layer_map[global_id] = layer_id
+                self.neuron_map[global_id] = (bp_name, node_id, local_id)
     
-    def _find_node_for_neuron(self, global_id: int) -> int:
-        """Find which node a neuron is assigned to."""
-        for node_id, neuron_list in self.node_assignments.items():
+    def _find_node_for_neuron(self, global_id: int) -> Tuple[str, int, int]:
+        """
+        Find which node a neuron is assigned to.
+        
+        Returns:
+            Tuple of (backplane_name, node_id, local_neuron_id)
+        """
+        for (bp_name, node_id), neuron_list in self.node_assignments.items():
             if global_id in neuron_list:
-                return node_id
+                local_id = neuron_list.index(global_id)
+                return (bp_name, node_id, local_id)
         raise ValueError(f"Neuron {global_id} not assigned to any node")
     
     def _generate_connections(self):
@@ -244,15 +286,16 @@ class SNNCompiler:
                     if len(target_neuron.synapses) < 60:
                         target_neuron.synapses.append((source_id, weight))
     
-    def _compile_neuron_tables(self) -> Dict[int, bytes]:
+    def _compile_neuron_tables(self) -> Dict[Tuple[str, int], bytes]:
         """Compile neuron tables for each node."""
         neuron_tables = {}
         
-        for node_id, neuron_ids in self.node_assignments.items():
+        for (bp_name, node_id), neuron_ids in self.node_assignments.items():
             table_data = bytearray()
             
             # Get neurons for this node
-            node_neurons = [n for n in self.neurons if n.node_id == node_id]
+            node_neurons = [n for n in self.neurons 
+                          if n.backplane_id == bp_name and n.node_id == node_id]
             node_neurons.sort(key=lambda n: n.neuron_id)
             
             for neuron in node_neurons:
@@ -260,7 +303,7 @@ class SNNCompiler:
                 entry = self._pack_neuron_entry(neuron)
                 table_data.extend(entry)
             
-            neuron_tables[node_id] = bytes(table_data)
+            neuron_tables[(bp_name, node_id)] = bytes(table_data)
         
         return neuron_tables
     
@@ -297,54 +340,92 @@ class SNNCompiler:
         
         return bytes(entry)
     
+    def _build_deployment_plan(self, neuron_tables: Dict[Tuple[str, int], bytes]) -> DeploymentPlan:
+        """Build deployment plan from compiled neuron tables."""
+        # Group nodes by backplane
+        backplane_nodes = {}
+        for (bp_name, node_id) in neuron_tables.keys():
+            if bp_name not in backplane_nodes:
+                backplane_nodes[bp_name] = []
+            if node_id not in backplane_nodes[bp_name]:
+                backplane_nodes[bp_name].append(node_id)
+        
+        # Sort node lists
+        for bp_name in backplane_nodes:
+            backplane_nodes[bp_name].sort()
+        
+        total_synapses = sum(len(n.synapses) for n in self.neurons)
+        
+        return DeploymentPlan(
+            neuron_tables=neuron_tables,
+            neuron_map=self.neuron_map,
+            backplane_nodes=backplane_nodes,
+            total_neurons=len(self.neurons),
+            total_synapses=total_synapses
+        )
+    
     def get_deployment_info(self) -> Dict[str, Any]:
         """Get deployment information."""
+        neurons_per_node = {}
+        for (bp_name, node_id), neurons in self.node_assignments.items():
+            key = f"{bp_name}:{node_id}"
+            neurons_per_node[key] = len(neurons)
+        
+        backplanes_used = set(bp for bp, _ in self.node_assignments.keys())
+        
         return {
             'network_name': self.topology.get('network_name', 'unnamed'),
             'neuron_count': self.topology['neuron_count'],
+            'backplanes_used': len(backplanes_used),
             'nodes_used': len(self.node_assignments),
-            'neurons_per_node': {
-                node_id: len(neurons) 
-                for node_id, neurons in self.node_assignments.items()
-            },
+            'neurons_per_node': neurons_per_node,
             'total_synapses': sum(len(n.synapses) for n in self.neurons)
         }
 
 
-def compile_snn_topology(topology_file: str) -> Tuple[Dict[int, bytes], Dict[str, Any]]:
+def compile_snn_topology(topology_file: str, 
+                        backplane_config: Optional[Dict[str, Any]] = None) -> DeploymentPlan:
     """
-    Compile SNN topology file to neuron tables.
+    Compile SNN topology file to deployment plan.
     
     Args:
         topology_file: Path to topology JSON file
+        backplane_config: Optional backplane configuration for multi-backplane deployment
         
     Returns:
-        Tuple of (neuron_tables, deployment_info)
+        DeploymentPlan with neuron tables and mapping
     """
     with open(topology_file, 'r') as f:
         topology = json.load(f)
     
-    compiler = SNNCompiler(topology)
-    neuron_tables = compiler.compile()
-    deployment_info = compiler.get_deployment_info()
+    compiler = SNNCompiler(topology, backplane_config)
+    deployment_plan = compiler.compile()
     
-    return neuron_tables, deployment_info
+    return deployment_plan
 
 
 if __name__ == '__main__':
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: snn_compiler.py <topology.json>")
+        print("Usage: snn_compiler.py <topology.json> [backplane_config.json]")
         sys.exit(1)
     
     topology_file = sys.argv[1]
-    neuron_tables, info = compile_snn_topology(topology_file)
+    backplane_config = None
     
-    print(f"Compiled SNN: {info['network_name']}")
-    print(f"  Neurons: {info['neuron_count']}")
-    print(f"  Nodes: {info['nodes_used']}")
-    print(f"  Total synapses: {info['total_synapses']}")
+    if len(sys.argv) > 2:
+        with open(sys.argv[2], 'r') as f:
+            backplane_config = json.load(f)
+    
+    deployment_plan = compile_snn_topology(topology_file, backplane_config)
+    
+    print(f"Compiled SNN Deployment Plan")
+    print(f"  Total Neurons: {deployment_plan.total_neurons}")
+    print(f"  Total Synapses: {deployment_plan.total_synapses}")
+    print(f"  Backplanes: {len(deployment_plan.backplane_nodes)}")
+    print(f"  Nodes: {len(deployment_plan.neuron_tables)}")
     print(f"\nNeurons per node:")
-    for node_id, count in info['neurons_per_node'].items():
-        print(f"  Node {node_id}: {count} neurons ({len(neuron_tables[node_id])} bytes)")
+    for (bp_name, node_id), table_data in deployment_plan.neuron_tables.items():
+        neuron_count = len(table_data) // 256
+        print(f"  {bp_name}:{node_id:2d} - {neuron_count:4d} neurons ({len(table_data):6d} bytes)")
