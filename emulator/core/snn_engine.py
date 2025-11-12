@@ -106,6 +106,7 @@ class SNNEngine:
                 flags=pn.flags
             )
             self.neurons[pn.neuron_id] = neuron
+            print(f"[SNN-{self.node_id}] Loaded neuron {pn.neuron_id}: threshold={pn.threshold}", file=sys.stderr, flush=True)
             
             # Create synapses
             synapses = []
