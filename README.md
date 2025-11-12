@@ -1,202 +1,259 @@
-# NeuroFab Z1 Neuromorphic Cluster System
+# NeuroFab Z1 Neuromorphic Cluster
 
-**Author:** NeuroFab
-**Date:** Nov 11, 2025
+A complete cluster management system for the NeuroFab Z1 neuromorphic computing platform, featuring Unix-style CLI tools, embedded firmware, software emulator, and distributed SNN deployment framework.
 
-## Introduction
+---
 
-This project provides a comprehensive suite of software for managing, programming, and deploying Spiking Neural Networks (SNNs) on the NeuroFab Z1 neuromorphic computing cluster. The system is designed to provide a powerful yet intuitive interface for researchers and developers working with event-based, parallel computing architectures.
+## Features
 
-This document serves as the central hub for the entire system, providing an overview of the architecture and linking to detailed documentation for each component.
+- **Cluster Management** - Unix-style CLI tools for managing 200+ nodes across multiple backplanes
+- **Distributed SNNs** - Deploy and execute Spiking Neural Networks across the cluster
+- **STDP Learning** - Spike-Timing-Dependent Plasticity for online learning
+- **Software Emulator** - Full hardware simulation for development without physical hardware
+- **Remote Firmware Flashing** - Update node firmware over the network
+- **Multi-Backplane Support** - Scale to hundreds of nodes
 
-## System Architecture
+---
 
-The Z1 cluster management system is composed of three primary layers that work in concert to provide a seamless user experience:
+## Quick Start
 
-1.  **Python Cluster Management Tools**: A collection of command-line utilities that provide a familiar, Unix-style interface for interacting with the cluster. These tools communicate with the controller node over a standard Ethernet network using an HTTP-based REST API.
+### 1. Installation
 
-2.  **Embedded HTTP Server**: A lightweight web server running on the controller node of each Z1 backplane. It exposes a RESTful API that translates high-level HTTP requests into low-level commands on the Z1's internal matrix bus.
+\`\`\`bash
+# Clone repository
+git clone https://github.com/ahtx/neurofab-z1-cluster.git
+cd neurofab-z1-cluster
 
-3.  **SNN Deployment & Execution Framework**: A powerful framework that runs on the compute nodes. It includes a Leaky Integrate-and-Fire (LIF) neuron execution engine, a message-based communication system for spike propagation, and mechanisms for loading neuron configurations and updating synaptic weights.
+# Install dependencies
+pip3 install requests numpy flask
 
-The architecture is designed for scalability, allowing multiple Z1 backplanes to be networked together to form a large-scale neuromorphic fabric.
+# Add tools to PATH
+export PATH=$PATH:$(pwd)/python_tools/bin
+\`\`\`
 
-```
-+--------------------------+      +------------------------+      +-----------------------+
-|   Python CLI Utilities   |      |   Controller Node      |      |    Compute Nodes (x16)  |
-| (nls, ncp, nsnn, etc.)   |      | (RP2350B)              |      |    (RP2350B)          |
-+--------------------------+      +------------------------+      +-----------------------+
-|        User PC           |      | |                      |      | |                     |
-|                          |      | +-> HTTP REST API      |      | +-> SNN Engine        |
-|                          |      | |   (W5500 Ethernet)   |      | |   (LIF Neurons)     |
-+--------------------------+      | |                      |      | |                     |
-             ^                    | +-> Z1 Bus Protocol    |      | +-> Spike Processing  |
-             |                    | |   (Extended Commands)  |      | |                     |
-             |                    +------------------------+      +-----------------------+
-             |                                 ^                           ^
-             +------------HTTP/TCP------------+                           |
-                                                 |                           |
-                                                 +----Z1 Matrix Bus (GPIO)---+
-```
+### 2. Start Emulator (Optional)
 
-## Components
-
-This repository is organized into three main sections:
-
-### 1. Documentation (`docs/`)
-
-This directory contains all the design and architecture documents for the system.
-
-- **`system_design.md`**: The complete system architecture, API specification, bus protocol extensions, and data structure definitions.
-- **`neurofab_findings.md`**: The initial analysis and findings from studying the original hardware documents and code.
-
-### 2. Python Cluster Management Tools (`python_tools/`)
-
-This directory contains the Python-based command-line utilities for managing the cluster. These tools are designed to be run from a developer's workstation.
-
-- **`bin/`**: Executable scripts for each command (`nls`, `ncp`, `ncat`, `nping`, `nstat`, `nsnn`, `nconfig`, `nflash`).
-- **`lib/`**: Core Python libraries, including the `z1_client.py` API client and the `snn_compiler.py`.
-- **`examples/`**: Example files, including a sample SNN topology for MNIST classification (`mnist_snn.json`).
-
-For detailed usage instructions, see the [Python Tools README](./python_tools/README.md).
-
-### 3. Embedded Firmware (`embedded_firmware/`)
-
-This directory contains the C code designed to run on the RP2350B microcontrollers within the Z1 cluster.
-
-- **`common/`**: Code shared between the controller and compute nodes, such as the extended bus protocol definition.
-- **`controller/`**: Source code for the HTTP REST API server that runs on the controller node.
-- **`node/`**: Source code for the SNN execution engine that runs on the compute nodes.
-
-For detailed information on the firmware architecture and build process, see the [Embedded Firmware README](./embedded_firmware/README.md).
-
-## Getting Started
-
-1.  **Review the Documentation**: Start by reading the `docs/system_design.md` to understand the overall architecture and API.
-
-2.  **Set up the Python Tools**: Follow the instructions in `python_tools/README.md` to install the CLI utilities on your development machine.
-
-3.  **Compile and Flash the Firmware**: Follow the instructions in `embedded_firmware/README.md` to integrate the new code with the existing Z1 firmware, compile it, and flash it to the controller and compute nodes.
-
-4.  **Test the Cluster**: Use the `nls` and `nping` utilities to verify that the cluster is online and all nodes are responding.
-
-    ```bash
-    # List all nodes
-    nls
-
-    # Ping all nodes
-    nping all
-    ```
-
-5.  **Configure Multi-Backplane Cluster** (optional): If you have multiple backplanes, create a cluster configuration.
-
-    ```bash
-    # Create cluster configuration
-    nconfig init -o ~/.neurofab/cluster.json
-
-    # Add backplanes
-    nconfig add backplane-0 192.168.1.222 --nodes 16
-    nconfig add backplane-1 192.168.1.223 --nodes 16
-
-    # List all nodes from all backplanes
-    nls --all --parallel
-    ```
-
-6.  **Deploy an SNN**: Use the `nsnn` utility to deploy and run the example SNN.
-
-    ```bash
-    # Deploy the MNIST SNN topology
-    nsnn deploy python_tools/examples/mnist_snn.json
-
-    # Start the SNN simulation
-    nsnn start
-
-    # Monitor spike activity for 5 seconds
-    nsnn monitor 5000
-    ```
-
-## Key Features
-
-- **Unix-Style CLI**: Intuitive and scriptable command-line tools for cluster management.
-- **Multi-Backplane Support**: Manage 200+ nodes across multiple controller boards from a single interface.
-- **Parallel Queries**: Query all backplanes simultaneously for fast cluster-wide operations.
-- **RESTful API**: A clean, modern API for programmatic access to the cluster.
-- **SNN Deployment**: A compiler that translates high-level JSON topology definitions into optimized, distributable neuron tables.
-- **Dynamic Memory Access**: Tools to directly read from and write to the memory of any compute node for debugging and dynamic configuration (`ncat`, `ncp`).
-- **Real-Time Monitoring**: Utilities to monitor cluster status and SNN spike activity in real-time (`nstat`, `nsnn monitor`).
-- **Scalable Architecture**: Designed to manage everything from a single backplane (16 nodes) to a full multi-rack system (200+ nodes).
-
-## 🖥️ Emulator
-
-A complete software emulator is included for development and testing without physical hardware:
-
-```bash
+\`\`\`bash
 cd emulator
 python3 z1_emulator.py
+\`\`\`
 
-# In another terminal
+### 3. Configure Tools
+
+\`\`\`bash
+# For emulator
 export Z1_CONTROLLER_IP=127.0.0.1
-./tools/nls
-./tools/nsnn deploy examples/xor_snn.json
-```
+export Z1_CONTROLLER_PORT=8000
 
-**Features:**
-- Simulates multi-backplane clusters (200+ nodes)
-- Full SNN execution with LIF neurons
-- Compatible with all Z1 tools
-- Perfect for development, testing, and demos
+# For hardware
+export Z1_CONTROLLER_IP=192.168.1.222
+export Z1_CONTROLLER_PORT=80
+\`\`\`
 
-See **[Emulator README](emulator/README.md)** for complete documentation.
+### 4. Test Connection
 
-## 🔧 Firmware Architecture
+\`\`\`bash
+# List all nodes
+nls
 
-The Z1 system uses a **two-stage bootloader architecture** that allows you to flash custom firmware to compute nodes remotely:
+# Check cluster status
+nstat
+\`\`\`
 
-- **Bootloader (16KB, protected)** - Handles firmware updates, provides API to applications
-- **Application Firmware (112KB, updatable)** - Your custom code (SNN, matrix ops, signal processing, etc.)
-- **Remote Flashing** - Update firmware over the network with `nflash` utility
+### 5. Deploy an SNN
 
-This means you can:
-- Run different algorithms on different nodes
-- Update firmware without physical access
-- Experiment rapidly with new algorithms
-- Always recover via protected bootloader
+\`\`\`bash
+# Deploy XOR network
+nsnn deploy python_tools/examples/xor_snn.json
 
-**Example:**
-```bash
-# Flash custom firmware to all nodes
-nflash flash my_algorithm.bin all --name "My Algorithm" --version "1.0.0"
+# Start execution
+nsnn start
 
-# Check firmware info
-nflash info all
-```
+# Monitor activity
+nsnn monitor 5000
+\`\`\`
 
-See **[Firmware Development Guide](docs/firmware_development_guide.md)** for complete details on creating custom firmware.
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [User Guide](docs/USER_GUIDE.md) | Complete guide for using the cluster management tools |
+| [Developer Guide](docs/DEVELOPER_GUIDE.md) | Firmware development, building, and integration |
+| [SNN Guide](docs/SNN_GUIDE.md) | Deploying and training Spiking Neural Networks |
+| [API Reference](docs/API_REFERENCE.md) | REST API documentation |
+| [Architecture](docs/ARCHITECTURE.md) | System architecture and design |
+| [Changelog](CHANGELOG.md) | Version history and changes |
+
+---
+
+## Project Structure
+
+\`\`\`
+neurofab-z1-cluster/
+├── python_tools/          # Cluster management CLI tools
+│   ├── bin/               # Executables (nls, nping, nstat, ncp, ncat, nflash, nsnn, nconfig)
+│   ├── lib/               # Python libraries
+│   └── examples/          # Example SNN topologies
+├── embedded_firmware/     # Firmware for RP2350B nodes
+│   ├── node/              # Node firmware (SNN execution engine)
+│   ├── controller/        # Controller firmware (HTTP API server)
+│   ├── bootloader/        # Two-stage bootloader
+│   └── common/            # Shared protocol definitions
+├── emulator/              # Software emulator
+│   ├── core/              # Emulation engine
+│   ├── tools/             # Emulator-compatible tools
+│   └── examples/          # Test networks
+└── docs/                  # Documentation
+\`\`\`
+
+---
+
+## CLI Tools
+
+| Tool | Description |
+|------|-------------|
+| \`nls\` | List all compute nodes |
+| \`nping\` | Test connectivity to nodes |
+| \`nstat\` | Real-time cluster status |
+| \`ncp\` | Copy data to node memory |
+| \`ncat\` | Display node memory contents |
+| \`nflash\` | Flash firmware to nodes |
+| \`nsnn\` | Deploy and manage SNNs |
+| \`nconfig\` | Cluster configuration management |
+
+---
+
+## Hardware Architecture
+
+- **Processor:** Raspberry Pi RP2350B (Dual Cortex-M33 @ 150MHz)
+- **Memory:** 8MB PSRAM per node
+- **Communication:** Z1 matrix bus (16-bit parallel GPIO)
+- **Network:** W5500 Ethernet controller (controller node)
+- **Nodes per Backplane:** Up to 16 compute nodes + 1 controller
+- **Scalability:** Multi-backplane support for 200+ nodes
+
+---
+
+## SNN Capabilities
+
+- **Neuron Model:** Leaky Integrate-and-Fire (LIF)
+- **Neurons per Node:** Up to 4,096
+- **Synapses per Neuron:** Up to 60
+- **Learning:** STDP (Spike-Timing-Dependent Plasticity)
+- **Deployment:** Distributed across multiple nodes
+- **Monitoring:** Real-time spike activity tracking
+
+---
+
+## Examples
+
+### List Nodes
+
+\`\`\`bash
+$ nls
+NODE  STATUS    MEMORY      UPTIME
+--------------------------------------------------
+   0  active    7.85 MB     2h 15m
+   1  active    7.85 MB     2h 15m
+   2  active    7.85 MB     2h 15m
+   3  active    7.85 MB     2h 15m
+
+Total: 4 nodes
+\`\`\`
+
+### Deploy SNN
+
+\`\`\`bash
+$ nsnn deploy examples/mnist_snn.json
+Compiling SNN topology...
+  Network: MNIST_SNN_Classifier
+  Neurons: 1794
+  Synapses: 235200
+  Nodes: 12
+
+Deploying to cluster...
+  Node 0: 150 neurons, 18750 synapses ✓
+  Node 1: 150 neurons, 18750 synapses ✓
+  ...
+
+Deployment complete!
+\`\`\`
+
+### Monitor Activity
+
+\`\`\`bash
+$ nsnn monitor 5000
+Monitoring SNN activity for 5000ms...
+
+Spike Activity:
+  Total Spikes: 15847
+  Spike Rate: 3169.40 Hz
+  Active Neurons: 342/1794 (19.1%)
+
+Top 10 Most Active Neurons:
+  Neuron 145: 234 spikes
+  Neuron 892: 198 spikes
+  Neuron 1203: 187 spikes
+  ...
+\`\`\`
+
+---
+
+## Development
+
+### Building Firmware
+
+\`\`\`bash
+cd embedded_firmware
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+\`\`\`
+
+### Running Tests
+
+\`\`\`bash
+# Start emulator
+cd emulator
+python3 z1_emulator.py &
+
+# Run test
+cd ../python_tools/examples
+../bin/nsnn deploy xor_snn.json
+../bin/nsnn start
+../bin/nsnn monitor 1000
+\`\`\`
+
+---
+
+## Contributing
+
+Contributions are welcome! Please see the [Developer Guide](docs/DEVELOPER_GUIDE.md) for details on the development workflow.
+
+---
 
 ## License
 
-Copyright © 2025 NeuroFab Corp. All Rights Reserved.
+This project is licensed under the MIT License.
 
-## 📚 New: Complete SNN Tutorial
+---
 
-We've added a comprehensive, step-by-step tutorial that walks you through deploying SNNs on the Z1 cluster:
+## Acknowledgments
 
-**[SNN Tutorial: From XOR to MNIST](docs/snn_tutorial.md)**
+Developed for the NeuroFab Z1 neuromorphic computing platform.
 
-This tutorial covers:
-- Understanding the Z1 architecture
-- Deploying your first SNN (XOR logic gate)
-- Scaling to 200+ nodes with MNIST classifier
-- How all components work together
-- Best practices and troubleshooting
+---
 
-Perfect for both beginners and advanced users!
+## Support
 
-## 📖 Additional Documentation
+For issues, questions, or feature requests, please visit:
+- **GitHub:** https://github.com/ahtx/neurofab-z1-cluster
+- **Documentation:** [docs/](docs/)
 
-- **[System Integration Guide](docs/system_integration_guide.md)** - Deep dive into how firmware, tools, and protocols integrate
-- **[API Reference](docs/api_reference.md)** - Complete REST API documentation
-- **[User Guide](docs/user_guide.md)** - Comprehensive command reference
-- **[Multi-Backplane Guide](docs/multi_backplane_guide.md)** - Scaling to hundreds of nodes
-- **[Firmware Development Guide](docs/firmware_development_guide.md)** - Creating and flashing custom firmware
+---
 
+**Version:** 1.0  
+**Release Date:** November 12, 2025  
+**Status:** Production Ready
