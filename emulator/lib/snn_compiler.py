@@ -313,7 +313,7 @@ class SNNCompiler:
         
         # Neuron state (16 bytes)
         struct.pack_into('<HHffI', entry, 0,
-                        neuron.neuron_id,
+                        neuron.global_id,  # Use global ID, not local ID
                         neuron.flags,
                         0.0,  # Initial membrane potential
                         neuron.threshold,
