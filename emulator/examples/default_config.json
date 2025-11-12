@@ -1,0 +1,24 @@
+{
+  "backplanes": [
+    {
+      "name": "backplane-0",
+      "controller_ip": "127.0.0.1",
+      "controller_port": 8000,
+      "node_count": 16,
+      "description": "Default emulated backplane"
+    }
+  ],
+  "simulation": {
+    "mode": "real-time",
+    "timestep_us": 1000,
+    "bus_latency_us": 2.0
+  },
+  "memory": {
+    "flash_size_mb": 2,
+    "psram_size_mb": 8
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8000
+  }
+}
