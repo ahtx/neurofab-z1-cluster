@@ -139,7 +139,7 @@ def flash_firmware(args):
             
             # Create client and test connection
             try:
-                client = Z1Client(controller_ip=controller_ip, controller_port=controller_port)
+                client = Z1Client(controller_ip=controller_ip, port=controller_port)
             except Exception as e:
                 print(f"  {target_name}: Failed to connect to controller at {controller_ip}:{controller_port}", file=sys.stderr)
                 print(f"    Error: {e}", file=sys.stderr)
@@ -323,7 +323,7 @@ Examples:
                        nargs='?',
                        help='Target node(s)')
     parser.add_argument('-c', '--controller',
-                       default='192.168.1.222',
+                       default=None,
                        help='Controller IP (default backplane)')
     parser.add_argument('--config',
                        help='Cluster configuration file')

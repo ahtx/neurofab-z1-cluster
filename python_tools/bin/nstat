@@ -79,8 +79,8 @@ Examples:
     )
     
     parser.add_argument('-c', '--controller',
-                       default='192.168.1.222',
-                       help='Controller IP address (default: 192.168.1.222)')
+                       default=None,
+                       help='Controller IP address (overrides environment/config)')
     parser.add_argument('-w', '--watch',
                        type=int,
                        metavar='SECONDS',

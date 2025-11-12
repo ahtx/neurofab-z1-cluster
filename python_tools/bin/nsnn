@@ -80,9 +80,16 @@ def deploy_snn(args):
             controller_ip = bp.controller_ip
             controller_port = bp.controller_port
         else:
-            controller_ip = args.controller
-            # Auto-detect port based on IP
-            controller_port = 8000 if controller_ip in ['127.0.0.1', 'localhost'] else 80
+            # Single-node mode: use args.controller if specified, otherwise use ClusterConfig default
+            if args.controller:
+                controller_ip = args.controller
+                # Auto-detect port based on IP
+                controller_port = 8000 if controller_ip in ['127.0.0.1', 'localhost'] else 80
+            else:
+                # Use ClusterConfig to get default (respects environment variables)
+                default_bp = config.get_default_backplane() if config else ClusterConfig().get_default_backplane()
+                controller_ip = default_bp.controller_ip
+                controller_port = default_bp.controller_port
         
         print(f"\n  Deploying to {bp_name} ({controller_ip}:{controller_port})...")
         client = Z1Client(controller_ip=controller_ip, port=controller_port)
@@ -377,8 +384,8 @@ Examples:
     parser.add_argument('argument', nargs='?',
                        help='Command argument (topology file, duration, pattern file)')
     parser.add_argument('-c', '--controller',
-                       default='192.168.1.222',
-                       help='Controller IP address (single backplane mode)')
+                       default=None,
+                       help='Controller IP address (overrides environment/config)')
     parser.add_argument('--config',
                        help='Cluster configuration file')
     parser.add_argument('--all',
