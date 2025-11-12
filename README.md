@@ -19,7 +19,7 @@ A complete cluster management system for the NeuroFab Z1 neuromorphic computing 
 
 ### 1. Installation
 
-\`\`\`bash
+```bash
 # Clone repository
 git clone https://github.com/ahtx/neurofab-z1-cluster.git
 cd neurofab-z1-cluster
@@ -29,18 +29,18 @@ pip3 install requests numpy flask
 
 # Add tools to PATH
 export PATH=$PATH:$(pwd)/python_tools/bin
-\`\`\`
+```
 
 ### 2. Start Emulator (Optional)
 
-\`\`\`bash
+```bash
 cd emulator
 python3 z1_emulator.py
-\`\`\`
+```
 
 ### 3. Configure Tools
 
-\`\`\`bash
+```bash
 # For emulator
 export Z1_CONTROLLER_IP=127.0.0.1
 export Z1_CONTROLLER_PORT=8000
@@ -48,21 +48,21 @@ export Z1_CONTROLLER_PORT=8000
 # For hardware
 export Z1_CONTROLLER_IP=192.168.1.222
 export Z1_CONTROLLER_PORT=80
-\`\`\`
+```
 
 ### 4. Test Connection
 
-\`\`\`bash
+```bash
 # List all nodes
 nls
 
 # Check cluster status
 nstat
-\`\`\`
+```
 
 ### 5. Deploy an SNN
 
-\`\`\`bash
+```bash
 # Deploy XOR network
 nsnn deploy python_tools/examples/xor_snn.json
 
@@ -71,7 +71,7 @@ nsnn start
 
 # Monitor activity
 nsnn monitor 5000
-\`\`\`
+```
 
 ---
 
@@ -90,7 +90,7 @@ nsnn monitor 5000
 
 ## Project Structure
 
-\`\`\`
+```
 neurofab-z1-cluster/
 ├── python_tools/          # Cluster management CLI tools
 │   ├── bin/               # Executables (nls, nping, nstat, ncp, ncat, nflash, nsnn, nconfig)
@@ -106,7 +106,7 @@ neurofab-z1-cluster/
 │   ├── tools/             # Emulator-compatible tools
 │   └── examples/          # Test networks
 └── docs/                  # Documentation
-\`\`\`
+```
 
 ---
 
@@ -114,14 +114,14 @@ neurofab-z1-cluster/
 
 | Tool | Description |
 |------|-------------|
-| \`nls\` | List all compute nodes |
-| \`nping\` | Test connectivity to nodes |
-| \`nstat\` | Real-time cluster status |
-| \`ncp\` | Copy data to node memory |
-| \`ncat\` | Display node memory contents |
-| \`nflash\` | Flash firmware to nodes |
-| \`nsnn\` | Deploy and manage SNNs |
-| \`nconfig\` | Cluster configuration management |
+| `nls` | List all compute nodes |
+| `nping` | Test connectivity to nodes |
+| `nstat` | Real-time cluster status |
+| `ncp` | Copy data to node memory |
+| `ncat` | Display node memory contents |
+| `nflash` | Flash firmware to nodes |
+| `nsnn` | Deploy and manage SNNs |
+| `nconfig` | Cluster configuration management |
 
 ---
 
@@ -151,7 +151,7 @@ neurofab-z1-cluster/
 
 ### List Nodes
 
-\`\`\`bash
+```bash
 $ nls
 NODE  STATUS    MEMORY      UPTIME
 --------------------------------------------------
@@ -161,11 +161,11 @@ NODE  STATUS    MEMORY      UPTIME
    3  active    7.85 MB     2h 15m
 
 Total: 4 nodes
-\`\`\`
+```
 
 ### Deploy SNN
 
-\`\`\`bash
+```bash
 $ nsnn deploy examples/mnist_snn.json
 Compiling SNN topology...
   Network: MNIST_SNN_Classifier
@@ -179,11 +179,11 @@ Deploying to cluster...
   ...
 
 Deployment complete!
-\`\`\`
+```
 
 ### Monitor Activity
 
-\`\`\`bash
+```bash
 $ nsnn monitor 5000
 Monitoring SNN activity for 5000ms...
 
@@ -197,7 +197,7 @@ Top 10 Most Active Neurons:
   Neuron 892: 198 spikes
   Neuron 1203: 187 spikes
   ...
-\`\`\`
+```
 
 ---
 
@@ -205,16 +205,16 @@ Top 10 Most Active Neurons:
 
 ### Building Firmware
 
-\`\`\`bash
+```bash
 cd embedded_firmware
 mkdir build && cd build
 cmake ..
 make -j$(nproc)
-\`\`\`
+```
 
 ### Running Tests
 
-\`\`\`bash
+```bash
 # Start emulator
 cd emulator
 python3 z1_emulator.py &
@@ -224,7 +224,7 @@ cd ../python_tools/examples
 ../bin/nsnn deploy xor_snn.json
 ../bin/nsnn start
 ../bin/nsnn monitor 1000
-\`\`\`
+```
 
 ---
 
