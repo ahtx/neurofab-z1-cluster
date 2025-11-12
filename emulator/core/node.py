@@ -84,6 +84,7 @@ class ParsedNeuron:
     leak_rate: float
     refractory_period_us: int
     synapses: List[Tuple[int, int]]  # (source_global_id, weight)
+    global_id: int = 0
 
 
 class Memory:
@@ -277,16 +278,19 @@ class ComputeNode:
             while offset < 1024 * 1024:  # Max 1MB of neuron tables
                 entry_data = self.memory.read(addr + offset, 256)
                 
-                # Check if this entry is empty
-                neuron_id = struct.unpack_from('<H', entry_data, 0)[0]
-                if neuron_id == 0 and offset > 0:
+                # Check if this entry is empty (all zeros)
+                if offset > 0 and all(b == 0 for b in entry_data):
                     # Reached end of table
                     break
+                
+                neuron_id = struct.unpack_from('<H', entry_data, 0)[0]
                 
                 # Parse neuron entry
                 neuron = self._parse_neuron_entry(entry_data)
                 if neuron:
                     neurons.append(neuron)
+                elif offset < 5000:  # Only log first few
+                    print(f"[Node {self.node_id}] Failed to parse neuron at offset {offset}")
                 
                 offset += 256
                 
@@ -311,7 +315,7 @@ class ComputeNode:
                 struct.unpack_from('<HHffI', entry_data, 0)
             
             # Synapse metadata (8 bytes)
-            synapse_count, synapse_capacity, reserved = \
+            synapse_count, synapse_capacity, global_id = \
                 struct.unpack_from('<HHI', entry_data, 16)
             
             # Neuron parameters (8 bytes)
@@ -335,7 +339,8 @@ class ComputeNode:
                 synapse_count=synapse_count,
                 leak_rate=leak_rate,
                 refractory_period_us=refractory_period_us,
-                synapses=synapses
+                synapses=synapses,
+                global_id=global_id
             )
         except Exception:
             return None

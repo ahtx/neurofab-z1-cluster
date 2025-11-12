@@ -17,7 +17,7 @@ from collections import deque
 @dataclass
 class Neuron:
     """LIF neuron state with STDP support."""
-    neuron_id: int
+    neuron_id: int  # Local neuron ID on this node
     membrane_potential: float = 0.0
     threshold: float = 1.0
     leak_rate: float = 0.95
@@ -25,6 +25,7 @@ class Neuron:
     last_spike_time_us: int = 0
     synapse_count: int = 0
     flags: int = 0
+    global_id: int = 0  # Global neuron ID across all nodes
     
     # STDP trace for learning
     pre_trace: float = 0.0   # Presynaptic trace
@@ -101,6 +102,85 @@ class SNNEngineSTDP:
         
         # Spike history for STDP (neuron_id -> list of recent spike times)
         self.spike_history: Dict[int, deque] = {}
+
+    def _build_id_mapping(self):
+        """Build mapping from encoded IDs to global IDs."""
+        self.encoded_to_global = {}
+        for neuron in self.neurons.values():
+            # Encode: (node_id << 16) | local_id
+            encoded = (self.node_id << 16) | neuron.neuron_id
+            self.encoded_to_global[encoded] = neuron.global_id
+        
+    def load_from_parsed_neurons(self, parsed_neurons: List):
+        """
+        Load neurons and synapses from parsed neuron table.
+        
+        Args:
+            parsed_neurons: List of ParsedNeuron objects from node.py
+        """
+        import sys
+        self.neurons.clear()
+        self.synapses.clear()
+        self.spike_history.clear()
+        
+        for pn in parsed_neurons:
+            # Create neuron with STDP support
+            # Calculate global ID from node assignment
+            global_id = pn.global_id  # Use global_id from parsed neuron table
+            neuron = Neuron(
+                neuron_id=pn.neuron_id,
+                membrane_potential=pn.membrane_potential,
+                threshold=pn.threshold,
+                leak_rate=pn.leak_rate,
+                refractory_period_us=pn.refractory_period_us,
+                last_spike_time_us=pn.last_spike_time,
+                synapse_count=pn.synapse_count,
+                flags=pn.flags,
+                global_id=global_id,
+                pre_trace=0.0,
+                post_trace=0.0
+            )
+            self.neurons[pn.neuron_id] = neuron
+            self.spike_history[pn.neuron_id] = deque(maxlen=100)
+            print(f"[SNN-{self.node_id}] Loaded neuron {pn.neuron_id} (global={pn.global_id}): threshold={pn.threshold}", file=sys.stderr, flush=True)
+            
+            # Create synapses with STDP support
+            synapses = []
+            for source_id, weight_int in pn.synapses:
+                # Decode weight: 0-127 = positive (0.0 to 2.0), 128-255 = negative (-0.01 to -2.0)
+                if weight_int >= 128:
+                    # Negative weight: 128-255 → -0.01 to -2.0
+                    weight_float = -(weight_int - 128) / 63.5
+                else:
+                    # Positive weight: 0-127 → 0.0 to 2.0
+                    weight_float = weight_int / 63.5
+                
+                # Decode source_id from encoded format to global_id
+                # source_id is encoded as (node_id << 16) | local_id
+                source_node = source_id >> 16
+                source_local = source_id & 0xFFFF
+                # Calculate global_id: we need to look it up, but for now use encoded as-is
+                # We'll decode it later using a global mapping
+                
+                synapse = Synapse(
+                    source_neuron_global_id=source_id,  # Keep encoded for now
+                    weight=weight_float,
+                    delay_us=1000,
+                    min_weight=self.stdp_config.w_min,
+                    max_weight=self.stdp_config.w_max
+                )
+                synapses.append(synapse)
+            
+            self.synapses[pn.neuron_id] = synapses
+            
+            # Initialize spike history for source neurons
+            for syn in synapses:
+                if syn.source_neuron_global_id not in self.spike_history:
+                    self.spike_history[syn.source_neuron_global_id] = deque(maxlen=100)
+            
+            # Debug: log synapses for each neuron
+            if len(synapses) > 0:
+                print(f"[SNN-{self.node_id}] Neuron {pn.neuron_id}: {len(synapses)} synapses", file=sys.stderr, flush=True)
         
         # Simulation state
         self.running = False
@@ -167,8 +247,15 @@ class SNNEngineSTDP:
                 weight_int = synapse_value & 0xFF
                 weight_float = weight_int / 255.0
                 
+                # Decode source_id from encoded format to global_id
+                # source_id is encoded as (node_id << 16) | local_id
+                source_node = source_id >> 16
+                source_local = source_id & 0xFFFF
+                # Calculate global_id: we need to look it up, but for now use encoded as-is
+                # We'll decode it later using a global mapping
+                
                 synapse = Synapse(
-                    source_neuron_global_id=source_id,
+                    source_neuron_global_id=source_id,  # Keep encoded for now
                     weight=weight_float,
                     delay_us=1000,
                     min_weight=self.stdp_config.w_min,
@@ -196,20 +283,16 @@ class SNNEngineSTDP:
     
     def inject_spike(self, neuron_id: int, value: float = 1.0):
         """
-        Inject external spike into a neuron.
+        Inject external spike into a neuron - directly fires it.
         
         Args:
-            neuron_id: Target neuron ID
+            neuron_id: Target neuron ID (local)
             value: Spike value (default 1.0)
         """
-        spike = Spike(
-            neuron_id=neuron_id,
-            source_node=self.node_id,
-            source_backplane=self.backplane_id,
-            timestamp_us=self.current_time_us,
-            value=value
-        )
-        self.incoming_spikes.append(spike)
+        if neuron_id in self.neurons:
+            neuron = self.neurons[neuron_id]
+            # Directly fire the neuron (for input injection)
+            self._fire_neuron(neuron)
         self.stats['total_spikes_received'] += 1
         
         print(f"[SNN-{self.node_id}] Injecting spike into neuron {neuron_id}, value={value}")
@@ -259,20 +342,42 @@ class SNNEngineSTDP:
         if source_id in self.spike_history:
             self.spike_history[source_id].append(self.current_time_us)
         
-        # If this is an input neuron on this node, fire it directly
-        if source_id in self.neurons:
-            neuron = self.neurons[source_id]
-            if neuron.synapse_count == 0:  # Input neuron (no incoming synapses)
-                print(f"[SNN-{self.node_id}] Neuron {source_id} is input neuron (no synapses), firing directly")
-                self._fire_neuron(neuron)
-                return
+        # Don't process spikes from neurons on this node (avoid loops)
+        # Check if this spike is from a local neuron
+        local_neuron_globals = {n.global_id for n in self.neurons.values()}
+        if self.node_id == 0:
+            print(f"[SNN-{self.node_id}] Filter check: source_id={source_id}, local_globals={list(local_neuron_globals)[:5]}")
+        if source_id in local_neuron_globals:
+            # Skip - this spike is from a local neuron, already processed
+            if self.node_id == 0:
+                print(f"[SNN-{self.node_id}] SKIPPING spike from local neuron {source_id}")
+            return
         
         # Apply spike to all neurons that have this source as input
+        # NOTE: Synapses store ENCODED source IDs (node_id << 16 | local_id)
+        # But spikes carry GLOBAL IDs. We need to encode the spike's global_id for matching.
+        # However, we don't know which node the source neuron is on from just the global_id.
+        # So instead, we need to decode the synapse's source_id to global_id.
+        # For now, we'll match directly - synapses should store global IDs, not encoded IDs.
+        
+        print(f"[SNN-{self.node_id}] MATCHING spike source_id={source_id}, have {len(self.synapses)} neurons with synapses")
         for neuron_id, synapses in self.synapses.items():
             neuron = self.neurons[neuron_id]
             
             for synapse in synapses:
-                if synapse.source_neuron_global_id == source_id:
+                # Decode synapse source from encoded format
+                synapse_source_encoded = synapse.source_neuron_global_id
+                synapse_source_node = synapse_source_encoded >> 16
+                synapse_source_local = synapse_source_encoded & 0xFFFF
+                
+                # Calculate global ID from node assignment
+                # Assuming sequential assignment: global_id = node * neurons_per_node + local
+                # With 894 neurons / 16 nodes ≈ 56 per node
+                synapse_source_global = synapse_source_node * 56 + synapse_source_local
+                
+                if self.node_id == 0 and neuron_id == 55:
+                    print(f"[DEBUG] Synapse: encoded={synapse_source_encoded}, node={synapse_source_node}, local={synapse_source_local}, global={synapse_source_global}, spike_source={source_id}")
+                if synapse_source_global == source_id:
                     # Apply synaptic weight
                     delta_v = synapse.weight * spike.value
                     old_v = neuron.membrane_potential
@@ -304,9 +409,9 @@ class SNNEngineSTDP:
         if self.stdp_config.enabled:
             neuron.post_trace += 1.0
         
-        # Generate outgoing spike
+        # Generate outgoing spike with GLOBAL neuron ID
         spike = Spike(
-            neuron_id=neuron.neuron_id,
+            neuron_id=neuron.global_id,  # Use global ID for routing
             source_node=self.node_id,
             source_backplane=self.backplane_id,
             timestamp_us=self.current_time_us,
@@ -453,6 +558,9 @@ class ClusterSNNCoordinator:
         # Global spike buffer for inter-node communication
         self.global_spike_buffer: deque = deque()
         self.routing_thread: Optional[threading.Thread] = None
+        
+        # Recent spikes for monitoring
+        self.recent_spikes: deque = deque(maxlen=10000)
     
     def register_engine(self, engine: SNNEngineSTDP):
         """Register an SNN engine."""
@@ -504,11 +612,25 @@ class ClusterSNNCoordinator:
             while self.global_spike_buffer:
                 spike = self.global_spike_buffer.popleft()
                 
+                # Record spike for monitoring
+                self.recent_spikes.append({
+                    'neuron_id': spike.neuron_id,
+                    'source_node': spike.source_node,
+                    'source_backplane': spike.source_backplane,
+                    'timestamp_us': spike.timestamp_us,
+                    'value': spike.value
+                })
+                
                 # Send to all engines (they'll filter based on their synapses)
                 for engine in self.engines.values():
                     engine.incoming_spikes.append(spike)
             
             time.sleep(0.001)  # 1ms routing interval
+    
+    def get_recent_spikes(self, count: int = 100) -> List[Dict]:
+        """Get recent spike events."""
+        spikes = list(self.recent_spikes)
+        return spikes[-count:] if count < len(spikes) else spikes
     
     def get_statistics(self) -> Dict:
         """Get cluster-wide statistics."""

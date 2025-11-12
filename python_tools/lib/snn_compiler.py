@@ -230,7 +230,10 @@ class SNNCompiler:
                     target_start, target_end,
                     conn
                 )
-            elif conn_type == 'sparse_random':
+            elif conn_type in ['sparse_random', 'random']:
+                # Map 'probability' to 'connection_probability' if needed
+                if 'probability' in conn and 'connection_probability' not in conn:
+                    conn['connection_probability'] = conn['probability']
                 self._generate_sparse_random(
                     source_start, source_end,
                     target_start, target_end,
@@ -294,7 +297,7 @@ class SNNCompiler:
                 weight = int(weight_float * 255)
                 
                 # Add synapse (limit to max synapses)
-                if len(target_neuron.synapses) < 60:
+                if len(target_neuron.synapses) < 54:
                     target_neuron.synapses.append((source_id, weight))
     
     def _generate_sparse_random(self, source_start: int, source_end: int,
@@ -302,8 +305,15 @@ class SNNCompiler:
                                 conn_config: Dict[str, Any]):
         """Generate sparse random connections."""
         connection_prob = conn_config.get('connection_probability', 0.1)
-        weight_mean = conn_config.get('weight_mean', 0.5)
-        weight_stddev = conn_config.get('weight_stddev', 0.1)
+        
+        # Support both weight_range and weight_mean/stddev
+        if 'weight_range' in conn_config:
+            weight_min, weight_max = conn_config['weight_range']
+            use_range = True
+        else:
+            weight_mean = conn_config.get('weight_mean', 0.5)
+            weight_stddev = conn_config.get('weight_stddev', 0.1)
+            use_range = False
         
         for target_id in range(target_start, target_end + 1):
             target_neuron = next(n for n in self.neurons if n.global_id == target_id)
@@ -311,9 +321,14 @@ class SNNCompiler:
             for source_id in range(source_start, source_end + 1):
                 if random.random() < connection_prob:
                     # Generate weight
-                    weight_float = random.gauss(weight_mean, weight_stddev)
-                    weight_float = max(0.0, min(1.0, weight_float))
-                    weight = int(weight_float * 255)
+                    if use_range:
+                        weight_float = random.uniform(weight_min, weight_max)
+                    else:
+                        weight_float = random.gauss(weight_mean, weight_stddev)
+                        weight_float = max(0.0, min(1.0, weight_float))
+                    
+                    # Convert to 8-bit: 0-127 for positive weights
+                    weight = min(127, int(weight_float * 63.5))
                     
                     # Add synapse (limit to max synapses)
                     if len(target_neuron.synapses) < 60:
@@ -355,8 +370,8 @@ class SNNCompiler:
         # Synapse metadata (8 bytes)
         struct.pack_into('<HHI', entry, 16,
                         len(neuron.synapses),  # synapse_count
-                        60,                    # synapse_capacity
-                        0)                     # reserved
+                        54,                    # synapse_capacity (256-40)/4 = 54 max
+                        neuron.global_id)      # global_id
         
         # Neuron parameters (8 bytes)
         struct.pack_into('<fI', entry, 24,
@@ -365,8 +380,8 @@ class SNNCompiler:
         
         # Reserved (8 bytes) - already zero
         
-        # Synapses (240 bytes, 60 × 4 bytes)
-        for i, (source_global_id, weight) in enumerate(neuron.synapses[:60]):
+        # Synapses (216 bytes, 54 × 4 bytes)
+        for i, (source_global_id, weight) in enumerate(neuron.synapses[:54]):
             # Convert global ID to encoded format: (node_id << 16) | local_neuron_id
             if source_global_id in self.neuron_map:
                 source_bp, source_node, source_local = self.neuron_map[source_global_id]

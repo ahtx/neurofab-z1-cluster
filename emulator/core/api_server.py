@@ -11,7 +11,7 @@ from flask import Flask, request, jsonify
 from typing import Optional
 
 from cluster import Cluster
-from snn_engine import ClusterSNNCoordinator, Spike
+from snn_engine_stdp import ClusterSNNCoordinator, Spike, STDPConfig, SNNEngineSTDP
 
 
 class Z1APIServer:
@@ -182,7 +182,7 @@ class Z1APIServer:
             # Initialize SNN engines from neuron tables in memory
             self._initialize_snn_engines()
             
-            self.snn_coordinator.start_all(timestep_us)
+            self.snn_coordinator.start_all()
             return jsonify({'status': 'ok'})
         
         @self.app.route('/api/snn/stop', methods=['POST'])
@@ -203,6 +203,12 @@ class Z1APIServer:
             count = int(request.args.get('count', 100))
             spikes = self.snn_coordinator.get_recent_spikes(count)
             return jsonify({'spikes': spikes, 'count': len(spikes)})
+        
+        @self.app.route('/api/snn/events/clear', methods=['POST'])
+        def clear_spike_events():
+            """Clear spike event buffer."""
+            self.snn_coordinator.recent_spikes.clear()
+            return jsonify({'status': 'ok'})
         
         @self.app.route('/api/snn/engines', methods=['GET'])
         def get_engines_debug():
@@ -288,11 +294,61 @@ class Z1APIServer:
             if 'simulation' in new_config:
                 self.cluster.config['simulation'].update(new_config['simulation'])
             return jsonify({'status': 'ok', 'config': self.cluster.config})
+        
+        @self.app.route('/api/snn/stdp/config', methods=['POST'])
+        def set_stdp_config():
+            """Configure STDP learning parameters."""
+            data = request.json
+            config = STDPConfig(
+                enabled=data.get('enabled', False),
+                learning_rate_plus=data.get('learning_rate_plus', 0.01),
+                learning_rate_minus=data.get('learning_rate_minus', 0.01),
+                tau_plus=data.get('tau_plus', 20000.0),
+                tau_minus=data.get('tau_minus', 20000.0),
+                w_min=data.get('w_min', 0.0),
+                w_max=data.get('w_max', 1.0),
+                max_delta_t=data.get('max_delta_t', 100000)
+            )
+            self.snn_coordinator.set_stdp_config(config)
+            return jsonify({'status': 'ok', 'stdp_config': data})
+        
+        @self.app.route('/api/snn/stdp/config', methods=['GET'])
+        def get_stdp_config():
+            """Get current STDP configuration."""
+            if self.snn_coordinator.stdp_config:
+                config = self.snn_coordinator.stdp_config
+                return jsonify({
+                    'enabled': config.enabled,
+                    'learning_rate_plus': config.learning_rate_plus,
+                    'learning_rate_minus': config.learning_rate_minus,
+                    'tau_plus': config.tau_plus,
+                    'tau_minus': config.tau_minus,
+                    'w_min': config.w_min,
+                    'w_max': config.w_max,
+                    'max_delta_t': config.max_delta_t
+                })
+            else:
+                return jsonify({'enabled': False})
+        
+        @self.app.route('/api/snn/weights', methods=['GET'])
+        def get_weights():
+            """Get current synaptic weights for inspection/export."""
+            weights = []
+            for (bp_id, node_id), engine in self.snn_coordinator.engines.items():
+                for neuron_id, synapses in engine.synapses.items():
+                    for synapse in synapses:
+                        weights.append({
+                            'target_neuron': neuron_id,
+                            'source_neuron': synapse.source_neuron_global_id,
+                            'weight': synapse.weight,
+                            'node_id': node_id
+                        })
+            return jsonify({'weights': weights, 'count': len(weights)})
     
     def _initialize_snn_engines(self):
         """Initialize SNN engines from neuron tables in node memory."""
         import sys
-        from snn_engine import SNNEngine
+        from snn_engine_stdp import SNNEngineSTDP
         
         print("[SNN] Initializing SNN engines...", file=sys.stderr, flush=True)
         
@@ -309,7 +365,7 @@ class Z1APIServer:
                     if parsed_neurons:
                         # Create new engine
                         key = (backplane_id, node_id)
-                        engine = SNNEngine(node_id, backplane_id)
+                        engine = SNNEngineSTDP(node_id, backplane_id, self.snn_coordinator.stdp_config)
                         engine.load_from_parsed_neurons(parsed_neurons)
                         self.snn_coordinator.register_engine(engine)
                         print(f"[SNN] Initialized engine for node {node_id}: {len(parsed_neurons)} neurons", file=sys.stderr, flush=True)
