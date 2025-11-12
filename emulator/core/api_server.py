@@ -202,6 +202,29 @@ class Z1APIServer:
             spikes = self.snn_coordinator.get_recent_spikes(count)
             return jsonify({'spikes': spikes, 'count': len(spikes)})
         
+        @self.app.route('/api/snn/engines', methods=['GET'])
+        def get_engines_debug():
+            """Get debug info about SNN engines."""
+            engines_info = []
+            for (bp_id, node_id), engine in self.snn_coordinator.engines.items():
+                engine_info = {
+                    'backplane_id': bp_id,
+                    'node_id': node_id,
+                    'neurons': [
+                        {
+                            'id': nid,
+                            'threshold': n.threshold,
+                            'leak_rate': n.leak_rate,
+                            'v_mem': n.membrane_potential,
+                            'synapse_count': len(engine.synapses.get(nid, []))
+                        }
+                        for nid, n in engine.neurons.items()
+                    ],
+                    'stats': engine.stats
+                }
+                engines_info.append(engine_info)
+            return jsonify({'engines': engines_info})
+        
         @self.app.route('/api/snn/input', methods=['POST'])
         def inject_spikes():
             """Inject input spikes."""

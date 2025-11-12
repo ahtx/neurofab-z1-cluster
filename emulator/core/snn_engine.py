@@ -129,20 +129,26 @@ class SNNEngine:
             neuron_id: Local neuron ID on this node
             value: Spike value (default 1.0)
         """
+        import sys
         self.stats['total_spikes_received'] += 1
         
         # Get the neuron
         neuron = self.neurons.get(neuron_id)
         if not neuron:
+            print(f"[SNN-{self.node_id}] WARNING: Neuron {neuron_id} not found", file=sys.stderr, flush=True)
             return
+        
+        print(f"[SNN-{self.node_id}] Injecting spike into neuron {neuron_id}, value={value}", file=sys.stderr, flush=True)
         
         # For input neurons, directly generate a spike
         # Input neurons typically have no incoming synapses
         if not self.synapses.get(neuron_id):
             # This is likely an input neuron - make it spike
+            print(f"[SNN-{self.node_id}] Neuron {neuron_id} is input neuron (no synapses), firing directly", file=sys.stderr, flush=True)
             self._generate_spike(neuron)
         else:
             # For non-input neurons, add to membrane potential
+            print(f"[SNN-{self.node_id}] Neuron {neuron_id} has {len(self.synapses[neuron_id])} synapses, adding to V_mem", file=sys.stderr, flush=True)
             neuron.membrane_potential += value
             if neuron.membrane_potential >= neuron.threshold:
                 self._generate_spike(neuron)
@@ -200,10 +206,15 @@ class SNNEngine:
         Args:
             spike: Spike to process
         """
+        import sys
+        
         # Calculate global ID of spiking neuron
         spike_global_id = (spike.source_backplane << 24) | (spike.source_node << 16) | spike.neuron_id
         
+        print(f"[SNN-{self.node_id}] Processing spike from neuron {spike.neuron_id} @ node {spike.source_node}, global_id=0x{spike_global_id:08x}", file=sys.stderr, flush=True)
+        
         # Find all neurons that have synapses from this source
+        targets_found = 0
         for target_neuron_id, synapses in self.synapses.items():
             neuron = self.neurons.get(target_neuron_id)
             if not neuron:
@@ -216,13 +227,20 @@ class SNNEngine:
             # Apply synaptic input
             for synapse in synapses:
                 if synapse.source_neuron_global_id == spike_global_id:
+                    targets_found += 1
+                    old_vmem = neuron.membrane_potential
                     # Add weighted input to membrane potential
                     neuron.membrane_potential += synapse.weight * spike.value
+                    
+                    print(f"[SNN-{self.node_id}]   → Neuron {target_neuron_id}: V_mem {old_vmem:.3f} + {synapse.weight:.3f} = {neuron.membrane_potential:.3f} (threshold={neuron.threshold})", file=sys.stderr, flush=True)
                     
                     # Check for spike
                     if neuron.membrane_potential >= neuron.threshold:
                         self._generate_spike(neuron)
                         break
+        
+        if targets_found == 0:
+            print(f"[SNN-{self.node_id}]   No target neurons found for this spike", file=sys.stderr, flush=True)
     
     def _generate_spike(self, neuron: Neuron):
         """
@@ -231,6 +249,10 @@ class SNNEngine:
         Args:
             neuron: Neuron that is spiking
         """
+        import sys
+        
+        print(f"[SNN-{self.node_id}] ⚡ Neuron {neuron.neuron_id} FIRED! (V_mem={neuron.membrane_potential:.3f}, threshold={neuron.threshold})", file=sys.stderr, flush=True)
+        
         # Reset neuron
         neuron.membrane_potential = 0.0
         neuron.last_spike_time_us = self.current_time_us
@@ -247,6 +269,8 @@ class SNNEngine:
         self.outgoing_spikes.append(spike)
         self.stats['total_spikes_sent'] += 1
         self.stats['neurons_spiked'] += 1
+        
+        print(f"[SNN-{self.node_id}] Spike added to outgoing queue, total sent: {self.stats['total_spikes_sent']}", file=sys.stderr, flush=True)
         
         # Call callback if set
         if self.spike_callback:
