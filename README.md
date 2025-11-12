@@ -54,7 +54,7 @@ This directory contains all the design and architecture documents for the system
 
 This directory contains the Python-based command-line utilities for managing the cluster. These tools are designed to be run from a developer's workstation.
 
-- **`bin/`**: Executable scripts for each command (`nls`, `ncp`, `ncat`, `nping`, `nstat`, `nsnn`).
+- **`bin/`**: Executable scripts for each command (`nls`, `ncp`, `ncat`, `nping`, `nstat`, `nsnn`, `nconfig`, `nflash`).
 - **`lib/`**: Core Python libraries, including the `z1_client.py` API client and the `snn_compiler.py`.
 - **`examples/`**: Example files, including a sample SNN topology for MNIST classification (`mnist_snn.json`).
 
@@ -126,6 +126,31 @@ For detailed information on the firmware architecture and build process, see the
 - **Real-Time Monitoring**: Utilities to monitor cluster status and SNN spike activity in real-time (`nstat`, `nsnn monitor`).
 - **Scalable Architecture**: Designed to manage everything from a single backplane (16 nodes) to a full multi-rack system (200+ nodes).
 
+## 🔧 Firmware Architecture
+
+The Z1 system uses a **two-stage bootloader architecture** that allows you to flash custom firmware to compute nodes remotely:
+
+- **Bootloader (16KB, protected)** - Handles firmware updates, provides API to applications
+- **Application Firmware (112KB, updatable)** - Your custom code (SNN, matrix ops, signal processing, etc.)
+- **Remote Flashing** - Update firmware over the network with `nflash` utility
+
+This means you can:
+- Run different algorithms on different nodes
+- Update firmware without physical access
+- Experiment rapidly with new algorithms
+- Always recover via protected bootloader
+
+**Example:**
+```bash
+# Flash custom firmware to all nodes
+nflash flash my_algorithm.bin all --name "My Algorithm" --version "1.0.0"
+
+# Check firmware info
+nflash info all
+```
+
+See **[Firmware Development Guide](docs/firmware_development_guide.md)** for complete details on creating custom firmware.
+
 ## License
 
 Copyright © 2025 NeuroFab Corp. All Rights Reserved.
@@ -151,4 +176,5 @@ Perfect for both beginners and advanced users!
 - **[API Reference](docs/api_reference.md)** - Complete REST API documentation
 - **[User Guide](docs/user_guide.md)** - Comprehensive command reference
 - **[Multi-Backplane Guide](docs/multi_backplane_guide.md)** - Scaling to hundreds of nodes
+- **[Firmware Development Guide](docs/firmware_development_guide.md)** - Creating and flashing custom firmware
 
