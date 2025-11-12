@@ -23,6 +23,27 @@ static bool g_engine_initialized = false;
 static bool g_engine_running = false;
 
 // ============================================================================
+// Weight Conversion
+// ============================================================================
+
+/**
+ * Decode 8-bit weight to float
+ * 
+ * Encoding:
+ *   0-127:   Positive weights (0.0 to 2.0)
+ *   128-255: Negative weights (-0.01 to -2.0)
+ */
+static inline float decode_weight(uint8_t weight_int) {
+    if (weight_int >= 128) {
+        // Negative weight: 128-255 → -0.01 to -2.0
+        return -(weight_int - 128) / 63.5f;
+    } else {
+        // Positive weight: 0-127 → 0.0 to 2.0
+        return weight_int / 63.5f;
+    }
+}
+
+// ============================================================================
 // Neuron Table Parsing
 // ============================================================================
 
@@ -30,45 +51,71 @@ static bool g_engine_running = false;
  * Parse a single 256-byte neuron entry from PSRAM
  * 
  * Binary format (256 bytes):
- *   [0-1]   uint16_t neuron_id (global)
- *   [2-3]   uint16_t synapse_count
- *   [4-7]   float threshold
- *   [8-11]  float leak_rate
- *   [12-15] uint32_t refractory_period_us
- *   [16-239] Synapse table (up to 28 synapses, 8 bytes each)
- *     [0-1]   uint16_t source_neuron_id (global)
- *     [2-5]   float weight
- *     [6-7]   uint16_t delay_us
- *   [240-255] Reserved
+ *   Offset 0-15:   Neuron state (16 bytes)
+ *     [0-1]   uint16_t neuron_id (local)
+ *     [2-3]   uint16_t flags
+ *     [4-7]   float membrane_potential
+ *     [8-11]  float threshold
+ *     [12-15] uint32_t last_spike_time_us
+ * 
+ *   Offset 16-23:  Synapse metadata (8 bytes)
+ *     [16-17] uint16_t synapse_count
+ *     [18-19] uint16_t synapse_capacity
+ *     [20-23] uint32_t reserved
+ * 
+ *   Offset 24-31:  Neuron parameters (8 bytes)
+ *     [24-27] float leak_rate
+ *     [28-31] uint32_t refractory_period_us
+ * 
+ *   Offset 32-39:  Reserved (8 bytes)
+ * 
+ *   Offset 40-279: Synapses (60 × 4 bytes = 240 bytes)
+ *     Each synapse: uint32_t packed as:
+ *       Bits [31:8]  - Source neuron ID (24-bit, encoded as node_id << 16 | local_id)
+ *       Bits [7:0]   - Weight (8-bit, 0-255)
  */
 static bool parse_neuron_entry(const uint8_t* data, z1_neuron_t* neuron) {
     if (!data || !neuron) return false;
     
-    // Parse neuron header
+    // Parse neuron state (offset 0-15)
     memcpy(&neuron->neuron_id, data + 0, 2);
-    memcpy(&neuron->synapse_count, data + 2, 2);
-    memcpy(&neuron->threshold, data + 4, 4);
-    memcpy(&neuron->leak_rate, data + 8, 4);
-    memcpy(&neuron->refractory_period_us, data + 12, 4);
+    memcpy(&neuron->flags, data + 2, 2);
+    memcpy(&neuron->membrane_potential, data + 4, 4);
+    memcpy(&neuron->threshold, data + 8, 4);
+    memcpy(&neuron->last_spike_time_us, data + 12, 4);
+    
+    // Parse synapse metadata (offset 16-23)
+    memcpy(&neuron->synapse_count, data + 16, 2);
+    // synapse_capacity at offset 18 (not used in runtime)
+    
+    // Parse neuron parameters (offset 24-31)
+    memcpy(&neuron->leak_rate, data + 24, 4);
+    memcpy(&neuron->refractory_period_us, data + 28, 4);
     
     // Validate
     if (neuron->synapse_count > Z1_MAX_SYNAPSES_PER_NEURON) {
         return false;
     }
     
-    // Initialize state
-    neuron->membrane_potential = 0.0f;
-    neuron->last_spike_time_us = 0;
+    // Initialize runtime state
     neuron->refractory_until_us = 0;
     neuron->spike_count = 0;
     
-    // Parse synapses
-    const uint8_t* synapse_data = data + 16;
+    // Parse synapses (offset 40+, 4 bytes each)
+    const uint8_t* synapse_data = data + 40;
     for (uint16_t i = 0; i < neuron->synapse_count; i++) {
-        z1_synapse_t* syn = &neuron->synapses[i];
-        memcpy(&syn->source_neuron_id, synapse_data + (i * 8) + 0, 2);
-        memcpy(&syn->weight, synapse_data + (i * 8) + 2, 4);
-        memcpy(&syn->delay_us, synapse_data + (i * 8) + 6, 2);
+        // Read packed synapse (4 bytes)
+        uint32_t synapse_packed;
+        memcpy(&synapse_packed, synapse_data + (i * 4), 4);
+        
+        // Extract source ID (24 bits) and weight (8 bits)
+        uint32_t source_id = (synapse_packed >> 8) & 0xFFFFFF;
+        uint8_t weight_int = synapse_packed & 0xFF;
+        
+        // Store in runtime structure
+        neuron->synapses[i].source_neuron_id = source_id;
+        neuron->synapses[i].weight = decode_weight(weight_int);
+        neuron->synapses[i].delay_us = 1000;  // Default 1ms delay
     }
     
     return true;
@@ -164,10 +211,10 @@ static void apply_leak(z1_neuron_t* neuron, uint32_t delta_t_us) {
 /**
  * Process incoming spike to a neuron
  */
-static void process_spike_to_neuron(z1_neuron_t* neuron, uint16_t source_id, 
+static void process_spike_to_neuron(z1_neuron_t* neuron, uint32_t source_id, 
                                     float value, uint32_t current_time_us) {
     // Find synapse from source
-    z1_synapse_t* synapse = NULL;
+    z1_synapse_runtime_t* synapse = NULL;
     for (uint16_t i = 0; i < neuron->synapse_count; i++) {
         if (neuron->synapses[i].source_neuron_id == source_id) {
             synapse = &neuron->synapses[i];
@@ -185,28 +232,27 @@ static void process_spike_to_neuron(z1_neuron_t* neuron, uint16_t source_id,
     }
     
     // Apply leak since last update
-    uint32_t delta_t = current_time_us - neuron->last_spike_time_us;
-    apply_leak(neuron, delta_t);
+    if (neuron->last_spike_time_us > 0) {
+        uint32_t delta_t = current_time_us - neuron->last_spike_time_us;
+        apply_leak(neuron, delta_t);
+    }
     
-    // Add weighted input
+    // Apply synaptic weight
     neuron->membrane_potential += synapse->weight * value;
     
     // Check for spike
     if (neuron->membrane_potential >= neuron->threshold) {
         // Generate spike
-        z1_spike_t spike = {
+        z1_spike_t outgoing_spike = {
             .neuron_id = neuron->neuron_id,
             .timestamp_us = current_time_us,
             .value = 1.0f
         };
         
-        // Add to outgoing queue
-        spike_queue_push(spike);
+        // Send spike on bus
+        z1_bus_send_spike(outgoing_spike.neuron_id, outgoing_spike.value);
         
-        // Broadcast on Z1 bus
-        z1_bus_broadcast_spike(neuron->neuron_id, current_time_us);
-        
-        // Update neuron state
+        // Reset membrane potential and set refractory period
         neuron->membrane_potential = 0.0f;
         neuron->last_spike_time_us = current_time_us;
         neuron->refractory_until_us = current_time_us + neuron->refractory_period_us;
@@ -235,9 +281,12 @@ static void process_spike_queue(uint32_t current_time_us) {
         g_snn_engine.stats.spikes_processed++;
         
         // Find all neurons that have synapses from this source
+        // Source ID format: (node_id << 16) | local_neuron_id
+        uint32_t spike_source_id = spike.neuron_id;  // Already encoded
+        
         for (uint16_t n = 0; n < g_snn_engine.neuron_count; n++) {
             z1_neuron_t* neuron = &g_snn_engine.neurons[n];
-            process_spike_to_neuron(neuron, spike.neuron_id, spike.value, current_time_us);
+            process_spike_to_neuron(neuron, spike_source_id, spike.value, current_time_us);
         }
     }
 }
@@ -247,23 +296,17 @@ static void process_spike_queue(uint32_t current_time_us) {
  */
 static void check_bus_for_spikes(uint32_t current_time_us) {
     z1_bus_message_t msg;
-    
     while (z1_bus_receive(&msg)) {
-        if (msg.command == Z1_CMD_SNN_INJECT_SPIKE) {
-            // Extract spike data from message
-            uint16_t neuron_id;
-            uint32_t timestamp;
-            memcpy(&neuron_id, msg.data, 2);
-            memcpy(&timestamp, msg.data + 2, 4);
+        if (msg.command == Z1_CMD_SNN_SPIKE) {
+            // Extract spike data
+            z1_spike_t spike;
+            spike.neuron_id = (msg.source_node << 16) | msg.data[0];  // Encode as (node << 16 | local_id)
+            memcpy(&spike.value, msg.data + 2, 4);
+            spike.timestamp_us = current_time_us;
             
-            z1_spike_t spike = {
-                .neuron_id = neuron_id,
-                .timestamp_us = timestamp,
-                .value = 1.0f
-            };
-            
-            spike_queue_push(spike);
-            g_snn_engine.stats.spikes_received++;
+            if (spike_queue_push(spike)) {
+                g_snn_engine.stats.spikes_received++;
+            }
         }
     }
 }
@@ -272,18 +315,17 @@ static void check_bus_for_spikes(uint32_t current_time_us) {
 // Public API
 // ============================================================================
 
-bool z1_snn_engine_init(void) {
+bool z1_snn_engine_init(uint8_t node_id) {
     if (g_engine_initialized) {
         return true;
     }
     
-    memset(&g_snn_engine, 0, sizeof(z1_snn_engine_t));
-    
-    g_snn_engine.timestep_us = Z1_DEFAULT_TIMESTEP_US;
-    g_snn_engine.current_time_us = 0;
+    memset(&g_snn_engine, 0, sizeof(g_snn_engine));
+    g_snn_engine.node_id = node_id;
+    g_snn_engine.timestep_us = 1000;  // 1ms default
     
     g_engine_initialized = true;
-    printf("[SNN] Engine initialized\n");
+    printf("[SNN] Engine initialized for node %u\n", node_id);
     
     return true;
 }
@@ -347,77 +389,30 @@ void z1_snn_engine_step(void) {
     g_snn_engine.current_time_us += g_snn_engine.timestep_us;
 }
 
-bool z1_snn_engine_inject_spike(uint16_t neuron_id, float value) {
+void z1_snn_engine_inject_spike(uint16_t neuron_id, float value) {
     if (!g_engine_running) {
-        return false;
+        return;
     }
     
-    z1_spike_t spike = {
-        .neuron_id = neuron_id,
-        .timestamp_us = g_snn_engine.current_time_us,
-        .value = value
-    };
+    // Create spike with local neuron ID encoded as (this_node << 16 | neuron_id)
+    z1_spike_t spike;
+    spike.neuron_id = (g_snn_engine.node_id << 16) | neuron_id;
+    spike.value = value;
+    spike.timestamp_us = g_snn_engine.current_time_us;
     
     if (spike_queue_push(spike)) {
         g_snn_engine.stats.spikes_injected++;
-        return true;
     }
-    
-    return false;
 }
 
-bool z1_snn_engine_get_stats(z1_snn_stats_t* stats) {
-    if (!stats) {
-        return false;
-    }
-    
-    *stats = g_snn_engine.stats;
-    return true;
-}
-
-bool z1_snn_engine_get_neuron_state(uint16_t neuron_id, z1_neuron_state_t* state) {
-    if (!state) {
-        return false;
-    }
-    
-    // Find neuron
-    for (uint16_t i = 0; i < g_snn_engine.neuron_count; i++) {
-        if (g_snn_engine.neurons[i].neuron_id == neuron_id) {
-            z1_neuron_t* neuron = &g_snn_engine.neurons[i];
-            
-            state->neuron_id = neuron->neuron_id;
-            state->membrane_potential = neuron->membrane_potential;
-            state->spike_count = neuron->spike_count;
-            state->last_spike_time_us = neuron->last_spike_time_us;
-            state->is_refractory = (g_snn_engine.current_time_us < neuron->refractory_until_us);
-            
-            return true;
-        }
-    }
-    
-    return false;  // Neuron not found
-}
-
-uint16_t z1_snn_engine_get_neuron_count(void) {
-    return g_snn_engine.neuron_count;
-}
-
-void z1_snn_engine_set_timestep(uint32_t timestep_us) {
-    g_snn_engine.timestep_us = timestep_us;
-}
-
-uint32_t z1_snn_engine_get_current_time(void) {
-    return g_snn_engine.current_time_us;
+z1_snn_stats_t z1_snn_engine_get_stats(void) {
+    return g_snn_engine.stats;
 }
 
 // ============================================================================
-// Z1 Bus Command Handler
+// Bus Command Handler
 // ============================================================================
 
-/**
- * Handle SNN-related commands from Z1 bus
- * Called by main firmware when SNN command is received
- */
 void z1_snn_handle_bus_command(z1_bus_message_t* msg) {
     if (!msg) return;
     
@@ -474,16 +469,4 @@ void z1_snn_engine_print_status(void) {
     printf("Spikes generated: %lu\n", g_snn_engine.stats.spikes_generated);
     printf("Spikes dropped: %lu\n", g_snn_engine.stats.spikes_dropped);
     printf("Queue size: %u/%u\n", g_snn_engine.spike_queue_size, Z1_MAX_SPIKE_QUEUE_SIZE);
-    printf("========================\n\n");
-}
-
-void z1_snn_engine_print_neurons(void) {
-    printf("\n=== Neuron States ===\n");
-    for (uint16_t i = 0; i < g_snn_engine.neuron_count; i++) {
-        z1_neuron_t* n = &g_snn_engine.neurons[i];
-        printf("Neuron %u: V_mem=%.3f, threshold=%.3f, spikes=%lu, synapses=%u\n",
-               n->neuron_id, n->membrane_potential, n->threshold, 
-               n->spike_count, n->synapse_count);
-    }
-    printf("====================\n\n");
 }

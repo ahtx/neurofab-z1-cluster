@@ -77,6 +77,77 @@ typedef struct __attribute__((packed)) {
 #define Z1_NEURON_FLAG_REFRACTORY   0x0010  // In refractory period
 
 // ============================================================================
+// Runtime Structures (in RAM)
+// ============================================================================
+
+#define Z1_MAX_NEURONS_PER_NODE 4096
+#define Z1_MAX_SYNAPSES_PER_NEURON 60
+#define Z1_MAX_SPIKE_QUEUE_SIZE 256
+#define Z1_NEURON_ENTRY_SIZE 256
+#define Z1_NEURON_TABLE_BASE_ADDR 0x20100000
+
+/**
+ * Runtime synapse structure
+ */
+typedef struct {
+    uint32_t source_neuron_id;  // Encoded as (node_id << 16) | local_id
+    float weight;               // Decoded weight (-2.0 to 2.0)
+    uint16_t delay_us;          // Synaptic delay
+} z1_synapse_runtime_t;
+
+/**
+ * Runtime neuron structure
+ */
+typedef struct {
+    uint16_t neuron_id;                                    // Local neuron ID
+    uint16_t flags;                                        // Status flags
+    float membrane_potential;                              // Current V_mem
+    float threshold;                                       // Spike threshold
+    uint32_t last_spike_time_us;                           // Last spike time
+    float leak_rate;                                       // Membrane leak
+    uint32_t refractory_period_us;                         // Refractory period
+    uint32_t refractory_until_us;                          // Refractory end time
+    uint16_t synapse_count;                                // Number of synapses
+    uint32_t spike_count;                                  // Total spikes generated
+    z1_synapse_runtime_t synapses[Z1_MAX_SYNAPSES_PER_NEURON];  // Synapse array
+} z1_neuron_t;
+
+/**
+ * Spike structure
+ */
+typedef struct {
+    uint32_t neuron_id;      // Encoded as (node_id << 16) | local_id
+    uint32_t timestamp_us;   // Spike timestamp
+    float value;             // Spike value (usually 1.0)
+} z1_spike_t;
+
+/**
+ * SNN statistics
+ */
+typedef struct {
+    uint32_t spikes_received;   // Spikes from other nodes
+    uint32_t spikes_injected;   // Spikes injected locally
+    uint32_t spikes_processed;  // Spikes processed
+    uint32_t spikes_generated;  // Spikes generated
+    uint32_t spikes_dropped;    // Spikes dropped (queue full)
+} z1_snn_stats_t;
+
+/**
+ * SNN engine runtime state
+ */
+typedef struct {
+    uint8_t node_id;                                       // This node's ID
+    uint16_t neuron_count;                                 // Number of neurons loaded
+    uint32_t current_time_us;                              // Current simulation time
+    uint32_t timestep_us;                                  // Simulation timestep
+    z1_neuron_t neurons[Z1_MAX_NEURONS_PER_NODE];          // Neuron array
+    z1_spike_t spike_queue[Z1_MAX_SPIKE_QUEUE_SIZE];       // Spike queue
+    uint16_t spike_queue_head;                             // Queue head index
+    uint16_t spike_queue_size;                             // Queue size
+    z1_snn_stats_t stats;                                  // Statistics
+} z1_snn_engine_t;
+
+// ============================================================================
 // SNN Engine State
 // ============================================================================
 
