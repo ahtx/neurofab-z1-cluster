@@ -31,21 +31,30 @@ class ClusterConfig:
         """
         Initialize cluster configuration.
         
+        Priority order:
+        1. Environment variables (Z1_CONTROLLER_IP, Z1_CONTROLLER_PORT) - HIGHEST
+        2. Specified config file
+        3. Default config file locations
+        4. Empty config (will use get_default_backplane() fallback)
+        
         Args:
             config_file: Path to configuration file (JSON)
         """
         self.backplanes: List[BackplaneConfig] = []
         self.config_file = config_file
         
-        if config_file and os.path.exists(config_file):
-            self.load(config_file)
-        else:
-            # Try default locations
-            self._load_default_config()
-        
-        # If no config loaded, try environment variables
-        if not self.backplanes:
+        # PRIORITY 1: Check environment variables FIRST
+        controller_ip = os.environ.get('Z1_CONTROLLER_IP')
+        if controller_ip:
+            # Environment variables take precedence over everything
             self._load_from_environment()
+        else:
+            # PRIORITY 2-3: Load from config file if no env vars
+            if config_file and os.path.exists(config_file):
+                self.load(config_file)
+            else:
+                # Try default locations
+                self._load_default_config()
     
     def _load_default_config(self):
         """Load configuration from default locations."""
