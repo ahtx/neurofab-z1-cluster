@@ -109,8 +109,13 @@ class SNNEngine:
             # Create synapses
             synapses = []
             for source_id, weight_int in pn.synapses:
-                # Convert 8-bit weight to float (0-255 -> 0.0-1.0)
-                weight_float = weight_int / 255.0
+                # Decode weight: 0-127 = positive (0.0 to 2.0), 128-255 = negative (-0.01 to -2.0)
+                if weight_int >= 128:
+                    # Negative weight: 128-255 → -0.01 to -2.0
+                    weight_float = -(weight_int - 128) / 63.5
+                else:
+                    # Positive weight: 0-127 → 0.0 to 2.0
+                    weight_float = weight_int / 63.5
                 
                 synapse = Synapse(
                     source_neuron_global_id=source_id,
@@ -208,10 +213,12 @@ class SNNEngine:
         """
         import sys
         
-        # Calculate global ID of spiking neuron
-        spike_global_id = (spike.source_backplane << 24) | (spike.source_node << 16) | spike.neuron_id
+        # Calculate 24-bit global ID of spiking neuron (matches synapse format)
+        # Format: [node_id:8][neuron_id:16]
+        spike_global_id = (spike.source_node << 16) | spike.neuron_id
+        spike_global_id &= 0xFFFFFF  # Ensure 24-bit
         
-        print(f"[SNN-{self.node_id}] Processing spike from neuron {spike.neuron_id} @ node {spike.source_node}, global_id=0x{spike_global_id:08x}", file=sys.stderr, flush=True)
+        print(f"[SNN-{self.node_id}] Processing spike from neuron {spike.neuron_id} @ node {spike.source_node}, global_id=0x{spike_global_id:06x}", file=sys.stderr, flush=True)
         
         # Find all neurons that have synapses from this source
         targets_found = 0

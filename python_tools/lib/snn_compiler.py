@@ -206,6 +206,11 @@ class SNNCompiler:
         layers = self.topology['layers']
         
         for conn in connections:
+            # Check if this is an explicit neuron-to-neuron connection
+            if 'source_neuron' in conn and 'target_neuron' in conn:
+                self._add_explicit_connection(conn)
+                continue
+            
             source_layer_id = conn['source_layer']
             target_layer_id = conn['target_layer']
             conn_type = conn['connection_type']
@@ -231,6 +236,34 @@ class SNNCompiler:
                     target_start, target_end,
                     conn
                 )
+    
+    def _add_explicit_connection(self, conn_config: Dict[str, Any]):
+        """Add an explicit neuron-to-neuron connection."""
+        source_id = conn_config['source_neuron']
+        target_id = conn_config['target_neuron']
+        weight_float = conn_config.get('weight', 0.5)
+        
+        # Find target neuron
+        target_neuron = next((n for n in self.neurons if n.global_id == target_id), None)
+        if not target_neuron:
+            print(f"Warning: Target neuron {target_id} not found")
+            return
+        
+        # Convert weight to 8-bit integer
+        # Use full 8-bit range: 0-255 maps to 0.0-2.0
+        # Negative weights use values 128-255 (bit 7 set)
+        if weight_float < 0:
+            # Negative weight: 128-255 range
+            # Map -2.0 to -0.01 → 255 to 128
+            weight = max(128, min(255, 128 + int(abs(weight_float) * 63.5)))
+        else:
+            # Positive weight: 0-127 range  
+            # Map 0.0 to 2.0 → 0 to 127
+            weight = min(127, int(weight_float * 63.5))
+        
+        # Add synapse (limit to max synapses)
+        if len(target_neuron.synapses) < 60:
+            target_neuron.synapses.append((source_id, weight))
     
     def _generate_fully_connected(self, source_start: int, source_end: int,
                                   target_start: int, target_end: int,
@@ -313,7 +346,7 @@ class SNNCompiler:
         
         # Neuron state (16 bytes)
         struct.pack_into('<HHffI', entry, 0,
-                        neuron.global_id,  # Use global ID, not local ID
+                        neuron.neuron_id,  # Use local neuron ID (0-based on this node)
                         neuron.flags,
                         0.0,  # Initial membrane potential
                         neuron.threshold,
@@ -333,9 +366,17 @@ class SNNCompiler:
         # Reserved (8 bytes) - already zero
         
         # Synapses (240 bytes, 60 × 4 bytes)
-        for i, (source_id, weight) in enumerate(neuron.synapses[:60]):
+        for i, (source_global_id, weight) in enumerate(neuron.synapses[:60]):
+            # Convert global ID to encoded format: (node_id << 16) | local_neuron_id
+            if source_global_id in self.neuron_map:
+                source_bp, source_node, source_local = self.neuron_map[source_global_id]
+                source_encoded = (source_node << 16) | source_local
+            else:
+                # Fallback: use global ID as-is
+                source_encoded = source_global_id
+            
             # Pack synapse: [source_id:24][weight:8]
-            synapse_value = ((source_id & 0xFFFFFF) << 8) | (weight & 0xFF)
+            synapse_value = ((source_encoded & 0xFFFFFF) << 8) | (weight & 0xFF)
             struct.pack_into('<I', entry, 40 + i * 4, synapse_value)
         
         return bytes(entry)

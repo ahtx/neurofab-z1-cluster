@@ -1,0 +1,96 @@
+{
+  "network_name": "XOR_Correct",
+  "description": "Correct XOR implementation with proper inhibition",
+  "neuron_count": 5,
+  "layers": [
+    {
+      "layer_id": 0,
+      "layer_type": "input",
+      "neuron_count": 2,
+      "neuron_ids": [0, 1],
+      "threshold": 0.1,
+      "leak_rate": 0.0,
+      "refractory_period_us": 500,
+      "description": "Input neurons A and B"
+    },
+    {
+      "layer_id": 1,
+      "layer_type": "hidden",
+      "neuron_count": 2,
+      "neuron_ids": [2, 3],
+      "threshold": 1.2,
+      "leak_rate": 0.7,
+      "refractory_period_us": 1000,
+      "description": "Hidden: OR gate and AND gate"
+    },
+    {
+      "layer_id": 2,
+      "layer_type": "output",
+      "neuron_count": 1,
+      "neuron_ids": [4, 4],
+      "threshold": 1.0,
+      "leak_rate": 0.7,
+      "refractory_period_us": 2000,
+      "description": "Output: XOR = OR AND NOT(AND)"
+    }
+  ],
+  "connections": [
+    {
+      "source_neuron": 0,
+      "target_neuron": 2,
+      "weight": 1.5,
+      "delay_us": 1000,
+      "description": "A -> OR gate"
+    },
+    {
+      "source_neuron": 1,
+      "target_neuron": 2,
+      "weight": 1.5,
+      "delay_us": 1000,
+      "description": "B -> OR gate"
+    },
+    {
+      "source_neuron": 0,
+      "target_neuron": 3,
+      "weight": 0.8,
+      "delay_us": 1000,
+      "description": "A -> AND gate (needs both)"
+    },
+    {
+      "source_neuron": 1,
+      "target_neuron": 3,
+      "weight": 0.8,
+      "delay_us": 1000,
+      "description": "B -> AND gate (needs both)"
+    },
+    {
+      "source_neuron": 2,
+      "target_neuron": 4,
+      "weight": 1.5,
+      "delay_us": 1000,
+      "description": "OR -> Output (excitatory)"
+    },
+    {
+      "source_neuron": 3,
+      "target_neuron": 4,
+      "weight": -2.0,
+      "delay_us": 500,
+      "description": "AND -> Output (strong inhibitory)"
+    }
+  ],
+  "node_assignment": {
+    "strategy": "balanced",
+    "nodes": [0, 1],
+    "description": "Distribute across 2 nodes"
+  },
+  "simulation_params": {
+    "timestep_us": 1000,
+    "simulation_duration_ms": 50
+  },
+  "stdp_config": {
+    "enabled": true,
+    "learning_rate": 0.01,
+    "tau_plus": 20000,
+    "tau_minus": 20000
+  }
+}

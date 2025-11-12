@@ -175,7 +175,9 @@ class Z1APIServer:
         @self.app.route('/api/snn/start', methods=['POST'])
         def start_snn():
             """Start SNN execution."""
-            timestep_us = request.json.get('timestep_us', 1000) if request.json else 1000
+            timestep_us = 1000
+            if request.is_json and request.json:
+                timestep_us = request.json.get('timestep_us', 1000)
             
             # Initialize SNN engines from neuron tables in memory
             self._initialize_snn_engines()
@@ -229,7 +231,15 @@ class Z1APIServer:
         def inject_spikes():
             """Inject input spikes."""
             data = request.json
-            spikes_data = data.get('spikes', [])
+            
+            # Support both single spike and batch formats
+            if 'spikes' in data:
+                spikes_data = data['spikes']
+            elif 'neuron_id' in data:
+                # Single spike format
+                spikes_data = [data]
+            else:
+                return jsonify({'error': 'Invalid spike data'}), 400
             
             injected = 0
             for spike_data in spikes_data:
@@ -286,6 +296,10 @@ class Z1APIServer:
         
         print("[SNN] Initializing SNN engines...", file=sys.stderr, flush=True)
         
+        # Clear existing engines first
+        self.snn_coordinator.engines.clear()
+        print("[SNN] Cleared existing engines", file=sys.stderr, flush=True)
+        
         for backplane_id, backplane in self.cluster.backplanes.items():
             for node_id, node in backplane.nodes.items():
                 try:
@@ -293,13 +307,12 @@ class Z1APIServer:
                     parsed_neurons = node.parse_neuron_table()
                     
                     if parsed_neurons:
-                        # Create or get engine
+                        # Create new engine
                         key = (backplane_id, node_id)
-                        if key not in self.snn_coordinator.engines:
-                            engine = SNNEngine(node_id, backplane_id)
-                            engine.load_from_parsed_neurons(parsed_neurons)
-                            self.snn_coordinator.register_engine(engine)
-                            print(f"[SNN] Initialized engine for node {node_id}: {len(parsed_neurons)} neurons", file=sys.stderr, flush=True)
+                        engine = SNNEngine(node_id, backplane_id)
+                        engine.load_from_parsed_neurons(parsed_neurons)
+                        self.snn_coordinator.register_engine(engine)
+                        print(f"[SNN] Initialized engine for node {node_id}: {len(parsed_neurons)} neurons", file=sys.stderr, flush=True)
                 except Exception as e:
                     print(f"[SNN] Error initializing node {node_id}: {e}", file=sys.stderr, flush=True)
                     import traceback
