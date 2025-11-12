@@ -287,8 +287,8 @@ ncp SOURCE DEST [OPTIONS]
 # Copy to node 0 weights location
 ncp weights.bin 0/weights
 
-# Copy to specific address
-ncp firmware.bin 0@0x20000000
+# Copy data to specific PSRAM address
+ncp data.bin 0@0x20000000
 
 # Copy with progress
 ncp data.bin 0/data -v

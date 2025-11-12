@@ -27,6 +27,15 @@
 #define Z1_CMD_MEM_WRITE_ACK    0x53  // Write acknowledgment
 #define Z1_CMD_MEM_INFO         0x54  // Query memory info
 
+// Bootloader / Firmware Management (0x30-0x3F)
+#define Z1_CMD_FIRMWARE_INFO        0x30  // Get firmware information
+#define Z1_CMD_FIRMWARE_UPLOAD      0x31  // Upload firmware to buffer
+#define Z1_CMD_FIRMWARE_VERIFY      0x32  // Verify firmware in buffer
+#define Z1_CMD_FIRMWARE_INSTALL     0x33  // Install firmware from buffer
+#define Z1_CMD_FIRMWARE_ACTIVATE    0x34  // Activate new firmware and reboot
+#define Z1_CMD_BOOT_MODE            0x35  // Set boot mode
+#define Z1_CMD_REBOOT               0x36  // Reboot node
+
 // Code Execution (0x60-0x6F)
 #define Z1_CMD_EXEC_CODE        0x60  // Execute code at address
 #define Z1_CMD_EXEC_STATUS      0x61  // Query execution status

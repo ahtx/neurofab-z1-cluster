@@ -272,8 +272,9 @@ Options:
   -v, --verbose          Show progress
 
 Examples:
-  ncp weights.bin 0/weights           # Copy to node 0 named location
-  ncp firmware.bin 0@0x20000000       # Copy to specific address
+  ncp weights.bin 0/weights           # Copy data to node 0 named location
+  ncp data.bin 0@0x20000000           # Copy data to specific PSRAM address
+  nflash flash firmware.bin 0         # Flash firmware to node 0 (use nflash, not ncp)
 ```
 
 #### ncat - Display Node Data
