@@ -4,6 +4,7 @@ SNN Execution Engine Emulator
 Simulates Leaky Integrate-and-Fire (LIF) neurons and spike propagation.
 """
 
+import sys
 import time
 import struct
 import threading
@@ -125,6 +126,12 @@ class SNNEngine:
                 synapses.append(synapse)
             
             self.synapses[pn.neuron_id] = synapses
+            
+            # Debug: log synapses for each neuron
+            if len(synapses) > 0:
+                print(f"[SNN-{self.node_id}] Neuron {pn.neuron_id}: {len(synapses)} synapses", file=sys.stderr, flush=True)
+                for syn in synapses:
+                    print(f"[SNN-{self.node_id}]   - source=0x{syn.source_neuron_global_id:06x}, weight={syn.weight:.3f}", file=sys.stderr, flush=True)
     
     def inject_spike(self, neuron_id: int, value: float = 1.0):
         """
@@ -145,18 +152,14 @@ class SNNEngine:
         
         print(f"[SNN-{self.node_id}] Injecting spike into neuron {neuron_id}, value={value}", file=sys.stderr, flush=True)
         
-        # For input neurons, directly generate a spike
-        # Input neurons typically have no incoming synapses
-        if not self.synapses.get(neuron_id):
-            # This is likely an input neuron - make it spike
-            print(f"[SNN-{self.node_id}] Neuron {neuron_id} is input neuron (no synapses), firing directly", file=sys.stderr, flush=True)
+        # Add to membrane potential (same for all neurons)
+        old_vmem = neuron.membrane_potential
+        neuron.membrane_potential += value
+        print(f"[SNN-{self.node_id}] Neuron {neuron_id}: V_mem {old_vmem:.3f} + {value:.3f} = {neuron.membrane_potential:.3f} (threshold={neuron.threshold})", file=sys.stderr, flush=True)
+        
+        # Check if neuron should fire
+        if neuron.membrane_potential >= neuron.threshold:
             self._generate_spike(neuron)
-        else:
-            # For non-input neurons, add to membrane potential
-            print(f"[SNN-{self.node_id}] Neuron {neuron_id} has {len(self.synapses[neuron_id])} synapses, adding to V_mem", file=sys.stderr, flush=True)
-            neuron.membrane_potential += value
-            if neuron.membrane_potential >= neuron.threshold:
-                self._generate_spike(neuron)
     
     def start(self, timestep_us: int = 1000):
         """

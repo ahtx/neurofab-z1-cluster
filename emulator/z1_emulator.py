@@ -14,8 +14,8 @@ from pathlib import Path
 # Add core to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'core'))
 
-from cluster import Cluster
-from api_server import Z1APIServer
+from core.cluster import Cluster
+from core.api_server import Z1APIServer
 
 
 def load_config(config_file: str) -> dict:
