@@ -35,14 +35,30 @@ sudo ln -s /path/to/neurofab-cluster-tools/bin/* /usr/local/bin/
 
 ## Utilities
 
-### nls - List Nodes
+### nconfig - Cluster Configuration
 
-List all compute nodes in the cluster.
+Manage multi-backplane cluster configurations.
 
 ```bash
-nls                    # List all nodes
+nconfig init                           # Create new configuration
+nconfig list                           # List all backplanes
+nconfig add bp-0 192.168.1.222        # Add backplane
+nconfig remove bp-0                    # Remove backplane
+nconfig show bp-0                      # Show backplane details
+```
+
+### nls - List Nodes
+
+List all compute nodes in the cluster. Supports multi-backplane configurations with 200+ nodes.
+
+```bash
+nls                    # List all nodes (uses default config)
+nls --all              # List all nodes from all backplanes
+nls --all --parallel   # Parallel queries (faster)
 nls -v                 # Verbose output with memory info
 nls -j                 # JSON output for scripting
+nls --backplane bp-0   # List nodes from specific backplane
+nls -c 192.168.1.100   # Single backplane mode (legacy)
 ```
 
 ### nping - Ping Nodes
@@ -108,11 +124,36 @@ nsnn inject input_spikes.json      # Inject input pattern
 
 ## Configuration
 
+### Single Backplane Mode
+
 All utilities accept a `-c` or `--controller` option to specify the controller node IP address. The default is `192.168.1.222`.
 
 ```bash
 nls -c 192.168.1.100   # Use custom controller IP
 ```
+
+### Multi-Backplane Mode
+
+For clusters with multiple backplanes (200+ nodes), create a cluster configuration file:
+
+```bash
+# Create configuration
+nconfig init -o ~/.neurofab/cluster.json
+
+# Add backplanes
+nconfig add backplane-0 192.168.1.222 --nodes 16 --description "Rack 1, Slot 1"
+nconfig add backplane-1 192.168.1.223 --nodes 16 --description "Rack 1, Slot 2"
+nconfig add backplane-2 192.168.1.224 --nodes 16 --description "Rack 1, Slot 3"
+
+# List all configured backplanes
+nconfig list
+
+# Use with utilities
+nls --all --parallel              # List all nodes from all backplanes
+nls --backplane backplane-0       # List nodes from specific backplane
+```
+
+See `docs/multi_backplane_guide.md` for detailed multi-backplane documentation.
 
 ## SNN Topology Format
 

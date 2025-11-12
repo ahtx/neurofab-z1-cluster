@@ -88,7 +88,21 @@ For detailed information on the firmware architecture and build process, see the
     nping all
     ```
 
-5.  **Deploy an SNN**: Use the `nsnn` utility to deploy and run the example SNN.
+5.  **Configure Multi-Backplane Cluster** (optional): If you have multiple backplanes, create a cluster configuration.
+
+    ```bash
+    # Create cluster configuration
+    nconfig init -o ~/.neurofab/cluster.json
+
+    # Add backplanes
+    nconfig add backplane-0 192.168.1.222 --nodes 16
+    nconfig add backplane-1 192.168.1.223 --nodes 16
+
+    # List all nodes from all backplanes
+    nls --all --parallel
+    ```
+
+6.  **Deploy an SNN**: Use the `nsnn` utility to deploy and run the example SNN.
 
     ```bash
     # Deploy the MNIST SNN topology
@@ -104,11 +118,13 @@ For detailed information on the firmware architecture and build process, see the
 ## Key Features
 
 - **Unix-Style CLI**: Intuitive and scriptable command-line tools for cluster management.
+- **Multi-Backplane Support**: Manage 200+ nodes across multiple controller boards from a single interface.
+- **Parallel Queries**: Query all backplanes simultaneously for fast cluster-wide operations.
 - **RESTful API**: A clean, modern API for programmatic access to the cluster.
 - **SNN Deployment**: A compiler that translates high-level JSON topology definitions into optimized, distributable neuron tables.
 - **Dynamic Memory Access**: Tools to directly read from and write to the memory of any compute node for debugging and dynamic configuration (`ncat`, `ncp`).
 - **Real-Time Monitoring**: Utilities to monitor cluster status and SNN spike activity in real-time (`nstat`, `nsnn monitor`).
-- **Scalable Architecture**: Designed to manage everything from a single backplane to a full multi-rack system.
+- **Scalable Architecture**: Designed to manage everything from a single backplane (16 nodes) to a full multi-rack system (200+ nodes).
 
 ## License
 
