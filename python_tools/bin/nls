@@ -76,10 +76,12 @@ Examples:
         # Determine operation mode
         if args.controller:
             # Single backplane mode (legacy)
+            # Auto-detect port based on IP
+            port = 8000 if args.controller in ['127.0.0.1', 'localhost'] else 80
             backplane = BackplaneConfig(
                 name="single",
                 controller_ip=args.controller,
-                controller_port=80
+                controller_port=port
             )
             backplanes_to_query = [backplane]
         
@@ -110,12 +112,8 @@ Examples:
             if len(config) > 0:
                 backplanes_to_query = list(config.backplanes)
             else:
-                # Default single backplane
-                backplane = BackplaneConfig(
-                    name="default",
-                    controller_ip="192.168.1.222",
-                    controller_port=80
-                )
+                # Use smart default from cluster_config
+                backplane = config.get_default_backplane()
                 backplanes_to_query = [backplane]
         
         # Query backplanes

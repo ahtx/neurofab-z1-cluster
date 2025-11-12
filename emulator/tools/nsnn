@@ -78,11 +78,14 @@ def deploy_snn(args):
                 print(f"Error: Backplane '{bp_name}' not found in configuration", file=sys.stderr)
                 continue
             controller_ip = bp.controller_ip
+            controller_port = bp.controller_port
         else:
             controller_ip = args.controller
+            # Auto-detect port based on IP
+            controller_port = 8000 if controller_ip in ['127.0.0.1', 'localhost'] else 80
         
-        print(f"\n  Deploying to {bp_name} ({controller_ip})...")
-        client = Z1Client(controller_ip=controller_ip)
+        print(f"\n  Deploying to {bp_name} ({controller_ip}:{controller_port})...")
+        client = Z1Client(controller_ip=controller_ip, port=controller_port)
         
         # Deploy to each node on this backplane
         for node_id in node_list:
@@ -199,7 +202,7 @@ def start_snn(args):
             continue
         
         try:
-            client = Z1Client(controller_ip=bp.controller_ip)
+            client = Z1Client(controller_ip=bp.controller_ip, port=bp.controller_port)
             client.start_snn()
             print(f"  {bp_name}: Started ✓")
         except Exception as e:
@@ -234,7 +237,7 @@ def stop_snn(args):
             continue
         
         try:
-            client = Z1Client(controller_ip=bp.controller_ip)
+            client = Z1Client(controller_ip=bp.controller_ip, port=bp.controller_port)
             client.stop_snn()
             print(f"  {bp_name}: Stopped ✓")
         except Exception as e:
@@ -271,8 +274,8 @@ def monitor_snn(args):
             continue
         
         try:
-            client = Z1Client(controller_ip=bp.controller_ip)
-            spikes = client.get_spike_activity(duration_ms=duration_ms)
+            client = Z1Client(controller_ip=bp.controller_ip, port=bp.controller_port)
+            spikes = client.get_spike_events(duration_ms=duration_ms)
             
             # Tag spikes with backplane
             for spike in spikes:
@@ -334,8 +337,8 @@ def inject_spikes(args):
             continue
         
         try:
-            client = Z1Client(controller_ip=bp.controller_ip)
-            count = client.inject_spikes(bp_spikes)
+            client = Z1Client(controller_ip=bp.controller_ip, port=bp.controller_port)
+            client.inject_spikes(bp_spikes)
             print(f"  {bp_name}: {count} spikes injected ✓")
         except Exception as e:
             print(f"  {bp_name}: ERROR - {e}", file=sys.stderr)
