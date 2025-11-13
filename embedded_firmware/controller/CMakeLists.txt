@@ -21,9 +21,13 @@ pico_sdk_init()
 # Controller firmware executable
 add_executable(z1_controller
     controller_main.c
+    w5500_http_server.c
     z1_http_api.c
     z1_matrix_bus.c
     z1_protocol_extended.c
+    z1_display.c
+    ssd1306.c
+    psram_rp2350.c
     # Add other controller-specific files here
 )
 

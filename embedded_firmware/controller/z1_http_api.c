@@ -6,6 +6,7 @@
 
 #include "z1_http_api.h"
 #include "z1_protocol_extended.h"
+#include "z1_display.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -23,6 +24,7 @@ bool g_snn_running = false;
 char g_snn_network_name[64] = "none";
 uint32_t g_snn_neuron_count = 0;
 uint8_t g_snn_nodes_used = 0;
+uint32_t g_snn_spike_count = 0;  // Total spikes processed
 
 // ============================================================================
 // JSON Helper Functions
@@ -116,13 +118,13 @@ void z1_http_send_response(http_connection_t* conn,
         "\r\n",
         status_code, status_text, content_type, body_length);
     
-    // Send headers
-    // TODO: Implement W5500 socket send
-    // w5500_socket_send(conn->socket_num, (uint8_t*)headers, header_len);
+    // Send headers (extern function from w5500_http_server.c)
+    extern bool w5500_send_http_data(const char* data, uint16_t length);
+    w5500_send_http_data(headers, header_len);
     
     // Send body
     if (body && body_length > 0) {
-        // w5500_socket_send(conn->socket_num, (uint8_t*)body, body_length);
+        w5500_send_http_data(body, body_length);
     }
     
     conn->state = HTTP_STATE_CLOSING;
@@ -246,6 +248,8 @@ void handle_post_node_ping(http_connection_t* conn, uint8_t node_id) {
 }
 
 void handle_post_nodes_discover(http_connection_t* conn) {
+    z1_display_status("Discovering nodes...");
+    
     bool active_nodes[16] = {false};
     z1_discover_nodes_sequential(active_nodes);
     
@@ -254,8 +258,10 @@ void handle_post_nodes_discover(http_connection_t* conn) {
     pos = json_begin_array(json, pos, sizeof(json), "active_nodes");
     
     bool first = true;
+    uint8_t count = 0;
     for (int i = 0; i < 16; i++) {
         if (active_nodes[i]) {
+            count++;
             if (!first) {
                 pos += snprintf(json + pos, sizeof(json) - pos, ",");
             }
@@ -266,6 +272,9 @@ void handle_post_nodes_discover(http_connection_t* conn) {
     
     pos = json_end_array(json, pos, sizeof(json), true);
     json_end_object(json, pos, sizeof(json));
+    
+    // Update display
+    z1_display_nodes(count, 16);
     
     z1_http_send_json(conn, 200, json);
 }
@@ -367,12 +376,17 @@ void handle_post_snn_start(http_connection_t* conn) {
     
     if (z1_start_snn_all()) {
         g_snn_running = true;
+        
+        // Update display
+        z1_display_snn_status(true, g_snn_spike_count);
+        
         char json[128];
         int pos = json_begin_object(json, sizeof(json));
         pos = json_add_string(json, pos, sizeof(json), "status", "ok", true);
         json_end_object(json, pos, sizeof(json));
         z1_http_send_json(conn, 200, json);
     } else {
+        z1_display_error("SNN start failed");
         z1_http_send_error(conn, 500, "Failed to start SNN");
     }
 }
@@ -380,12 +394,17 @@ void handle_post_snn_start(http_connection_t* conn) {
 void handle_post_snn_stop(http_connection_t* conn) {
     if (z1_stop_snn_all()) {
         g_snn_running = false;
+        
+        // Update display
+        z1_display_snn_status(false, g_snn_spike_count);
+        
         char json[128];
         int pos = json_begin_object(json, sizeof(json));
         pos = json_add_string(json, pos, sizeof(json), "status", "ok", true);
         json_end_object(json, pos, sizeof(json));
         z1_http_send_json(conn, 200, json);
     } else {
+        z1_display_error("SNN stop failed");
         z1_http_send_error(conn, 500, "Failed to stop SNN");
     }
 }
@@ -538,6 +557,9 @@ void handle_post_snn_deploy(http_connection_t* conn, const char* body, uint16_t 
     printf("[API] Deploying SNN '%s': %lu neurons across %u nodes\n",
            g_snn_network_name, total_neurons, node_count);
     
+    // Update display
+    z1_display_snn_deploy(total_neurons, node_count);
+    
     // Parse and deploy to each node
     const uint8_t* data_ptr = (const uint8_t*)body + 69;
     uint16_t remaining = body_length - 69;
@@ -611,6 +633,9 @@ void handle_post_snn_deploy(http_connection_t* conn, const char* body, uint16_t 
     z1_http_send_json(conn, 200, json);
     
     printf("[API] SNN deployment complete\n");
+    
+    // Update display
+    z1_display_status("Deploy complete");
 }
 
 /**
@@ -663,6 +688,14 @@ void handle_post_snn_inject(http_connection_t* conn, const char* body, uint16_t 
         
         injected++;
     }
+    
+    // Update spike count
+    g_snn_spike_count += injected;
+    
+    // Update display
+    char status_msg[32];
+    snprintf(status_msg, sizeof(status_msg), "Injected %d spikes", injected);
+    z1_display_status(status_msg);
     
     // Send response
     char json[128];

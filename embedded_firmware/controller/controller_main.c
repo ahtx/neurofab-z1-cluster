@@ -1,165 +1,173 @@
 /**
  * Z1 Cluster Controller - Main Entry Point
  * 
- * Initializes the controller node with HTTP API server for cluster management
+ * Complete neuromorphic cluster controller with:
+ * - W5500 Ethernet HTTP server
+ * - SNN API endpoints
+ * - SSD1306 OLED display
+ * - Matrix bus cluster management
  * 
  * Copyright NeuroFab Corp. All rights reserved.
  */
 
 #include <stdio.h>
-#include <string.h>
 #include "pico/stdlib.h"
-#include "pico/multicore.h"
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
+
+// Project headers
+#include "w5500_http_server.h"
 #include "z1_matrix_bus.h"
 #include "z1_protocol_extended.h"
-#include "z1_http_api.h"
+#include "z1_display.h"
+#include "psram_rp2350.h"
 
 // Controller is always node ID 16
 #define Z1_CONTROLLER_NODE_ID  16
 
-// LED pins (same as nodes)
+// LED pins
 #define LED_RED_PIN    44
 #define LED_GREEN_PIN  45
 #define LED_BLUE_PIN   46
 
-/**
- * Initialize RGB LED with PWM
- */
+// ============================================================================
+// LED Control
+// ============================================================================
+
 static void init_led(void) {
-    // Initialize GPIO pins for PWM
     gpio_set_function(LED_RED_PIN, GPIO_FUNC_PWM);
     gpio_set_function(LED_GREEN_PIN, GPIO_FUNC_PWM);
     gpio_set_function(LED_BLUE_PIN, GPIO_FUNC_PWM);
     
-    // Get PWM slices
     uint slice_r = pwm_gpio_to_slice_num(LED_RED_PIN);
     uint slice_g = pwm_gpio_to_slice_num(LED_GREEN_PIN);
     uint slice_b = pwm_gpio_to_slice_num(LED_BLUE_PIN);
     
-    // Configure PWM
     pwm_set_wrap(slice_r, 255);
     pwm_set_wrap(slice_g, 255);
     pwm_set_wrap(slice_b, 255);
     
-    // Set initial brightness (green for controller)
     pwm_set_gpio_level(LED_RED_PIN, 0);
-    pwm_set_gpio_level(LED_GREEN_PIN, 50);
+    pwm_set_gpio_level(LED_GREEN_PIN, 0);
     pwm_set_gpio_level(LED_BLUE_PIN, 0);
     
-    // Enable PWM
     pwm_set_enabled(slice_r, true);
     pwm_set_enabled(slice_g, true);
     pwm_set_enabled(slice_b, true);
 }
 
-/**
- * Set LED color
- */
 static void set_led_color(uint8_t r, uint8_t g, uint8_t b) {
     pwm_set_gpio_level(LED_RED_PIN, r);
     pwm_set_gpio_level(LED_GREEN_PIN, g);
     pwm_set_gpio_level(LED_BLUE_PIN, b);
 }
 
-/**
- * Main entry point
- */
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
 int main(void) {
-    // Initialize standard I/O
     stdio_init_all();
-    
-    // Wait for USB serial to connect
     sleep_ms(2000);
     
     printf("\n");
     printf("╔════════════════════════════════════════════════════════════╗\n");
     printf("║  Z1 Neuromorphic Cluster Controller v1.0                  ║\n");
-    printf("║  NeuroFab Corp. - Distributed SNN Computing Platform       ║\n");
+    printf("║  W5500 HTTP Server + SSD1306 Display + Matrix Bus         ║\n");
     printf("╚════════════════════════════════════════════════════════════╝\n");
     printf("\n");
     
     // Initialize LED
-    printf("[Controller] Initializing RGB LED...\n");
+    printf("[Init] RGB LED...\n");
     init_led();
-    set_led_color(0, 100, 0);  // Green for initialization
+    set_led_color(100, 100, 0);  // Yellow = booting
     
-    // Initialize matrix bus
-    printf("[Controller] Initializing matrix bus (Node ID: %d)...\n", Z1_CONTROLLER_NODE_ID);
-    if (!z1_bus_init(Z1_CONTROLLER_NODE_ID)) {
-        printf("[Controller] ❌ Matrix bus initialization failed!\n");
-        set_led_color(255, 0, 0);  // Red for error
-        while (1) {
-            sleep_ms(1000);
-        }
+    // Initialize OLED Display
+    printf("[Init] OLED Display...\n");
+    if (!z1_display_init()) {
+        printf("[Init] ⚠️  OLED init failed, continuing without display\n");
     }
-    printf("[Controller] ✅ Matrix bus initialized\n");
     
-    // Set bus timing for fast parallel bus
-    z1_bus_clock_high_us = 100;
-    z1_bus_clock_low_us = 50;
-    z1_bus_ack_timeout_ms = 500;
-    z1_bus_backoff_base_us = 100;
-    z1_bus_broadcast_hold_ms = 200;
+    // Initialize PSRAM
+    printf("[Init] PSRAM...\n");
+    z1_display_status("Init PSRAM...");
+    if (!psram_init()) {
+        printf("[Init] ⚠️  PSRAM init failed\n");
+        z1_display_status("PSRAM failed!");
+    } else {
+        printf("[Init] ✅ PSRAM OK\n");
+    }
     
-    printf("[Controller] Bus timing configured (fast parallel bus)\n");
-    printf("             High:%dus, Low:%dus, ACK:%dms, Backoff:%dus, Broadcast:%dms\n",
-           (int)z1_bus_clock_high_us, (int)z1_bus_clock_low_us,
-           (int)z1_bus_ack_timeout_ms, (int)z1_bus_backoff_base_us,
-           (int)z1_bus_broadcast_hold_ms);
+    // Initialize Matrix Bus
+    printf("[Init] Matrix Bus (Controller ID: %d)...\n", Z1_CONTROLLER_NODE_ID);
+    z1_display_status("Init bus...");
+    if (!z1_bus_init(Z1_CONTROLLER_NODE_ID)) {
+        printf("[Init] ❌ Bus init failed!\n");
+        z1_display_error("Bus init failed!");
+        set_led_color(255, 0, 0);  // Red = error
+        while (1) sleep_ms(1000);
+    }
+    printf("[Init] ✅ Matrix bus OK\n");
     
     // Discover nodes
-    printf("[Controller] Discovering nodes in cluster...\n");
+    printf("[Init] Discovering nodes...\n");
+    z1_display_status("Scanning nodes...");
     bool active_nodes[16] = {false};
     z1_discover_nodes_sequential(active_nodes);
     
-    int node_count = 0;
+    uint8_t active_node_count = 0;
     for (int i = 0; i < 16; i++) {
         if (active_nodes[i]) {
-            node_count++;
+            active_node_count++;
+            printf("[Init]   Node %d: ACTIVE\n", i);
         }
     }
-    printf("[Controller] ✅ Discovered %d active nodes\n", node_count);
+    printf("[Init] ✅ Found %d nodes\n", active_node_count);
+    z1_display_nodes(active_node_count, 16);
+    sleep_ms(1000);
     
-    // TODO: Initialize HTTP server
-    printf("[Controller] HTTP API server: Not yet implemented\n");
-    printf("[Controller] To implement: lwIP + HTTP server on port 80\n");
+    // Initialize W5500 Ethernet
+    printf("[Init] W5500 Ethernet...\n");
+    if (!w5500_init()) {
+        printf("[Init] ❌ W5500 init failed!\n");
+        z1_display_error("W5500 init failed!");
+        set_led_color(255, 0, 0);  // Red = error
+        while (1) sleep_ms(1000);
+    }
     
-    // Set LED to blue (ready)
-    set_led_color(0, 0, 100);
+    // Setup TCP server
+    printf("[Init] HTTP Server...\n");
+    if (!w5500_setup_tcp_server(80)) {
+        printf("[Init] ❌ TCP server failed!\n");
+        z1_display_error("TCP server failed!");
+        set_led_color(255, 0, 0);  // Red = error
+        while (1) sleep_ms(1000);
+    }
+    
+    set_led_color(0, 0, 255);  // Blue = ready
     
     printf("\n");
     printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  Controller Ready                                          ║\n");
-    printf("║  Nodes Active: %-3d                                         ║\n", node_count);
-    printf("║  HTTP API: Not yet available                               ║\n");
-    printf("║  Matrix Bus: Active                                        ║\n");
+    printf("║  ✅ Controller Ready                                       ║\n");
+    printf("║                                                            ║\n");
+    printf("║  HTTP Server: http://192.168.1.222                        ║\n");
+    printf("║  Nodes Active: %-3d                                         ║\n", active_node_count);
+    printf("║                                                            ║\n");
+    printf("║  API Endpoints:                                            ║\n");
+    printf("║    GET  /api/nodes                                         ║\n");
+    printf("║    POST /api/nodes/discover                                ║\n");
+    printf("║    GET  /api/snn/status                                    ║\n");
+    printf("║    POST /api/snn/deploy                                    ║\n");
+    printf("║    POST /api/snn/start                                     ║\n");
+    printf("║    POST /api/snn/stop                                      ║\n");
+    printf("║    POST /api/snn/input                                     ║\n");
     printf("╚════════════════════════════════════════════════════════════╝\n");
     printf("\n");
     
-    // Main loop
-    uint32_t loop_count = 0;
-    while (1) {
-        // Heartbeat LED blink
-        if (loop_count % 10 == 0) {
-            set_led_color(0, 0, 255);  // Bright blue
-        } else if (loop_count % 10 == 1) {
-            set_led_color(0, 0, 50);   // Dim blue
-        }
-        
-        // Process any incoming bus messages
-        // (In a full implementation, this would be interrupt-driven)
-        
-        sleep_ms(100);
-        loop_count++;
-        
-        // Periodic status
-        if (loop_count % 100 == 0) {
-            printf("[Controller] 💓 Heartbeat - Loop %d, Active nodes: %d\n", 
-                   (int)loop_count, node_count);
-        }
-    }
+    z1_display_status("HTTP listening");
+    
+    // Run HTTP server (blocking loop)
+    w5500_http_server_run();
     
     return 0;
 }
