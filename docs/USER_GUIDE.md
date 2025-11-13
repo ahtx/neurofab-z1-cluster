@@ -74,14 +74,15 @@ The NeuroFab Z1 is a production-ready neuromorphic computing cluster designed fo
 | Component | RP2350B Pin | Notes |
 |-----------|-------------|-------|
 | **W5500 Ethernet** | | |
-| MISO | GPIO16 | SPI RX |
-| MOSI | GPIO19 | SPI TX |
-| SCK | GPIO18 | SPI Clock |
-| CS | GPIO17 | Chip Select |
-| RST | GPIO20 | Reset (optional) |
+| MISO | GPIO36 | SPI RX |
+| MOSI | GPIO39 | SPI TX |
+| SCK | GPIO38 | SPI Clock |
+| CS | GPIO37 | Chip Select |
+| RST | GPIO34 | Reset (optional) |
+| INT | GPIO35 | Interrupt (optional) |
 | **SSD1306 OLED** | | |
-| SDA | GPIO4 | I2C Data |
-| SCL | GPIO5 | I2C Clock |
+| SDA | GPIO28 | I2C Data |
+| SCL | GPIO29 | I2C Clock |
 | **PSRAM (APS6404L)** | | |
 | CS | QSPI_SS | Chip Select |
 | SCK | QSPI_SCLK | Clock |

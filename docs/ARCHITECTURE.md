@@ -309,16 +309,18 @@ See [API_REFERENCE.md](API_REFERENCE.md) for complete documentation.
 
 | Command | Value | Description | Data |
 |---------|-------|-------------|------|
-| Z1_CMD_PING | 0x01 | Ping node | None |
+| Z1_CMD_PING | 0x14 | Ping node | None |
 | Z1_CMD_PING_RESPONSE | 0x02 | Ping response | 0x42 |
-| Z1_CMD_RESET | 0x03 | Reset node | None |
-| Z1_CMD_LED_SET | 0x10 | Set LED color | R, G, B |
-| Z1_CMD_MEM_READ | 0x20 | Read memory | addr[4], len[2] |
-| Z1_CMD_MEM_WRITE | 0x21 | Write memory | addr[4], data[n] |
-| Z1_CMD_SNN_LOAD_TABLE | 0x30 | Load neuron table | None |
-| Z1_CMD_SNN_START | 0x31 | Start SNN | None |
-| Z1_CMD_SNN_STOP | 0x32 | Stop SNN | None |
-| Z1_CMD_SNN_SPIKE | 0x33 | Spike event | global_id[4], time[4], flags[1] |
+| Z1_CMD_RESET_NODE | 0x15 | Reset node | None |
+| Z1_CMD_GREEN_LED | 0x10 | Set green LED | PWM value (0-255) |
+| Z1_CMD_RED_LED | 0x11 | Set red LED | PWM value (0-255) |
+| Z1_CMD_BLUE_LED | 0x12 | Set blue LED | PWM value (0-255) |
+| Z1_CMD_MEM_READ_REQ | 0x40 | Read memory request | addr[4], len[2] |
+| Z1_CMD_MEM_WRITE | 0x42 | Write memory | addr[4], data[n] |
+| Z1_CMD_SNN_LOAD_TABLE | 0x78 | Load neuron table | None |
+| Z1_CMD_SNN_START | 0x73 | Start SNN | None |
+| Z1_CMD_SNN_STOP | 0x74 | Stop SNN | None |
+| Z1_CMD_SNN_SPIKE | 0x70 | Spike event | global_id[4], time[4], flags[1] |
 | Z1_CMD_FRAME_START | 0xF0 | Multi-frame start | total_length[2] |
 | Z1_CMD_FRAME_DATA | 0xF1 | Multi-frame data | data[254] |
 | Z1_CMD_FRAME_END | 0xF2 | Multi-frame end | CRC[2] |
@@ -575,26 +577,29 @@ weight = clamp(weight, 0.0, 1.0);
 ### Neuron Table Entry (256 bytes)
 
 ```c
-typedef struct {
-    // Neuron state (32 bytes)
+typedef struct __attribute__((packed)) {
+    // Neuron state (16 bytes)
     uint16_t neuron_id;              // Local neuron ID (0-1023)
     uint16_t flags;                  // Status flags
     float membrane_potential;        // Current potential
     float threshold;                 // Spike threshold
+    uint32_t last_spike_time_us;     // Last spike timestamp
+    
+    // Synapse metadata (8 bytes)
+    uint16_t synapse_count;          // Number of synapses
+    uint16_t synapse_capacity;       // Max synapses (60)
+    uint32_t reserved1;              // Reserved
+    
+    // Neuron parameters (8 bytes)
     float leak_rate;                 // Exponential decay rate
     uint32_t refractory_period_us;   // Refractory period
-    uint32_t last_spike_time_us;     // Last spike timestamp
-    uint32_t spike_count;            // Total spikes generated
-    uint32_t reserved[2];            // Future use
     
-    // Synapse table (224 bytes = 56 synapses × 4 bytes)
-    uint16_t synapse_count;          // Number of synapses
-    uint16_t synapse_capacity;       // Max synapses (56)
-    struct {
-        uint32_t source_global_id : 24;  // Source neuron global ID
-        uint32_t weight_fixed : 8;       // Weight (0-255, scale to 0.0-1.0)
-    } synapses[56];
-} neuron_entry_t;
+    // Reserved for future use (8 bytes)
+    uint32_t reserved2[2];           // Future use
+    
+    // Synapse table (240 bytes = 60 synapses × 4 bytes)
+    uint32_t synapses[60];           // Packed: [source_id:24][weight:8]
+} z1_neuron_entry_t;
 ```
 
 **Total:** 256 bytes (aligned for PSRAM access)
