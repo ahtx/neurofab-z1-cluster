@@ -1,780 +1,658 @@
-# NeuroFab Z1 Cluster User Guide
+# Z1 Neuromorphic Cluster - User Guide
 
-**Author:** NeuroFab  
-**Date:** November 11, 2025
+**Version:** 3.0 (Production Ready)  
+**Date:** November 13, 2025  
+**Firmware:** Controller v3.0, Node v2.1
+
+---
 
 ## Table of Contents
 
 1. [Introduction](#introduction)
-2. [System Overview](#system-overview)
-3. [Installation](#installation)
-4. [Command Reference](#command-reference)
-5. [Working with SNNs](#working-with-snns)
-6. [Advanced Topics](#advanced-topics)
-7. [Troubleshooting](#troubleshooting)
+2. [Hardware Setup](#hardware-setup)
+3. [Firmware Installation](#firmware-installation)
+4. [Software Installation](#software-installation)
+5. [First Connection](#first-connection)
+6. [CLI Tools Reference](#cli-tools-reference)
+7. [Working with SNNs](#working-with-snns)
+8. [HTTP API Usage](#http-api-usage)
+9. [Troubleshooting](#troubleshooting)
+10. [Advanced Topics](#advanced-topics)
+
+---
 
 ## Introduction
 
-The NeuroFab Z1 is a neuromorphic computing cluster designed for massively parallel, event-driven computation using Spiking Neural Networks (SNNs). This guide provides comprehensive instructions for managing the cluster, deploying neural networks, and monitoring system performance.
+The NeuroFab Z1 is a production-ready neuromorphic computing cluster designed for distributed Spiking Neural Network (SNN) execution. This guide provides step-by-step instructions for hardware setup, firmware installation, and cluster management.
 
-The Z1 cluster consists of up to 16 compute nodes per backplane, each powered by a Raspberry Pi RP2350B microcontroller with 8MB of PSRAM. The nodes communicate via a custom high-speed matrix bus, allowing for efficient spike propagation and coordinated computation.
+### What You'll Learn
 
-## System Overview
+- How to assemble and configure Z1 hardware
+- How to flash production firmware to RP2350B boards
+- How to use Python CLI tools for cluster management
+- How to deploy and execute SNNs across the cluster
+- How to monitor and debug system operation
 
-### Hardware Architecture
+### System Capabilities
 
-The Z1 cluster is organized into a hierarchical structure:
+- **Neurons per Node:** Up to 1024 (limited by PSRAM allocation)
+- **Nodes per Cluster:** Up to 16 (single backplane)
+- **Total Capacity:** 16,384 neurons across cluster
+- **Simulation Rate:** 1ms timestep (1000 Hz)
+- **Learning:** STDP (Spike-Timing-Dependent Plasticity)
+- **Communication:** 16-bit parallel matrix bus + HTTP API
 
-- **Backplane**: A single PCB containing up to 16 compute nodes and 1 controller node
-- **Compute Nodes**: RP2350B-based processors with 8MB PSRAM for neuron storage
-- **Controller Node**: RP2350B with W5500 Ethernet controller for external communication
-- **Matrix Bus**: 16-bit parallel GPIO bus connecting all nodes on a backplane
+---
 
-Each compute node can host up to 4,096 neurons with up to 60 synapses per neuron. This allows a single backplane to support networks with tens of thousands of neurons and millions of synapses.
+## Hardware Setup
 
-### Software Architecture
+### Required Components
 
-The software stack consists of three layers:
+#### Controller Node (1 per cluster)
+- Raspberry Pi RP2350B development board
+- W5500 Ethernet module (SPI interface)
+- SSD1306 OLED display 128x64 (I2C, optional but recommended)
+- APS6404L 8MB QSPI PSRAM chip
+- 5V power supply (USB or external)
+- Ethernet cable
 
-**Layer 1: Python Cluster Management Tools**
+#### Compute Node (1-16 per cluster)
+- Raspberry Pi RP2350B development board
+- APS6404L 8MB QSPI PSRAM chip
+- RGB LED (common cathode, optional)
+- 5V power supply (USB or external)
+- Node ID resistors (for GPIO40-43 strapping)
 
-A suite of Unix-style command-line utilities that run on a user's workstation. These tools communicate with the controller node over Ethernet using HTTP/REST API calls.
+#### Interconnect
+- 16-bit parallel bus (ribbon cable or PCB traces)
+- Common ground connection between all nodes
 
-**Layer 2: Embedded HTTP Server**
+### Wiring Diagram
 
-A lightweight web server running on the controller node. It exposes a RESTful API and translates HTTP requests into Z1 bus commands.
+#### Controller Node Connections
 
-**Layer 3: SNN Execution Engine**
+| Component | RP2350B Pin | Notes |
+|-----------|-------------|-------|
+| **W5500 Ethernet** | | |
+| MISO | GPIO16 | SPI RX |
+| MOSI | GPIO19 | SPI TX |
+| SCK | GPIO18 | SPI Clock |
+| CS | GPIO17 | Chip Select |
+| RST | GPIO20 | Reset (optional) |
+| **SSD1306 OLED** | | |
+| SDA | GPIO4 | I2C Data |
+| SCL | GPIO5 | I2C Clock |
+| **PSRAM (APS6404L)** | | |
+| CS | QSPI_SS | Chip Select |
+| SCK | QSPI_SCLK | Clock |
+| D0-D3 | QSPI_SD0-3 | Data lines |
+| **Matrix Bus** | | |
+| DATA[0:15] | GPIO0-15 | 16-bit parallel |
+| **Status LED** | | |
+| LED | GPIO25 | Built-in LED |
 
-The core computational engine running on each compute node. It implements Leaky Integrate-and-Fire (LIF) neurons, processes incoming spikes from the bus, and generates outbound spikes.
+#### Compute Node Connections
 
-### Communication Flow
+| Component | RP2350B Pin | Notes |
+|-----------|-------------|-------|
+| **PSRAM (APS6404L)** | | |
+| CS | QSPI_SS | Chip Select |
+| SCK | QSPI_SCLK | Clock |
+| D0-D3 | QSPI_SD0-3 | Data lines |
+| **Matrix Bus** | | |
+| DATA[0:15] | GPIO0-15 | 16-bit parallel |
+| **Node ID Strapping** | | |
+| ID_BIT0 | GPIO40 | LSB (pull high/low) |
+| ID_BIT1 | GPIO41 | |
+| ID_BIT2 | GPIO42 | |
+| ID_BIT3 | GPIO43 | MSB (pull high/low) |
+| **RGB LED (optional)** | | |
+| RED | GPIO46 | PWM output |
+| GREEN | GPIO44 | PWM output |
+| BLUE | GPIO45 | PWM output |
 
+### Node ID Configuration
+
+Each compute node must have a unique ID (0-15). Configure via GPIO40-43:
+
+| Node ID | GPIO43 | GPIO42 | GPIO41 | GPIO40 |
+|---------|--------|--------|--------|--------|
+| 0 | LOW | LOW | LOW | LOW |
+| 1 | LOW | LOW | LOW | HIGH |
+| 2 | LOW | LOW | HIGH | LOW |
+| 3 | LOW | LOW | HIGH | HIGH |
+| ... | ... | ... | ... | ... |
+| 15 | HIGH | HIGH | HIGH | HIGH |
+
+**Implementation:** Use pull-down resistors (10kΩ to GND) for LOW, leave floating or pull-up (10kΩ to 3.3V) for HIGH.
+
+---
+
+## Firmware Installation
+
+### Download Production Firmware
+
+```bash
+git clone https://github.com/ahtx/neurofab-z1-cluster.git
+cd neurofab-z1-cluster/firmware_releases
 ```
-User Workstation → HTTP/REST → Controller Node → Z1 Bus → Compute Nodes
-```
 
-All cluster operations follow this pattern: the user issues a command via a Python utility, which sends an HTTP request to the controller. The controller translates this into one or more bus commands, which are executed by the target compute nodes.
+**Available Binaries:**
+- `z1_controller_v3.0_PRODUCTION_READY.uf2` (120KB)
+- `z1_node_v2.1_PRODUCTION_READY.uf2` (89KB)
 
-## Installation
+### Flash Controller Node
+
+1. **Enter Bootloader Mode:**
+   - Disconnect USB cable
+   - Hold BOOTSEL button on RP2350B
+   - Connect USB cable while holding button
+   - Release button after 2 seconds
+
+2. **Copy Firmware:**
+   - RP2350B will appear as USB mass storage device (RPI-RP2)
+   - Copy `z1_controller_v3.0_PRODUCTION_READY.uf2` to the drive
+   - Board will automatically reboot
+
+3. **Verify Installation:**
+   - OLED display should show "Z1 Controller Ready"
+   - Built-in LED should blink slowly
+   - Serial output (115200 baud) should show boot messages
+
+### Flash Compute Nodes
+
+1. **Configure Node ID:**
+   - Set GPIO40-43 according to desired node ID (see table above)
+   - Double-check connections before powering on
+
+2. **Enter Bootloader Mode:**
+   - Hold BOOTSEL button
+   - Connect USB cable
+   - Release button
+
+3. **Copy Firmware:**
+   - Copy `z1_node_v2.1_PRODUCTION_READY.uf2` to RPI-RP2 drive
+   - Board will reboot automatically
+
+4. **Verify Installation:**
+   - RGB LED should show startup sequence: RED → GREEN → BLUE
+   - Serial output should show node ID and "Ready for bus operations"
+
+5. **Repeat for All Nodes:**
+   - Flash each node with unique ID (0-15)
+   - Verify each node boots successfully before proceeding
+
+### Network Configuration
+
+Controller defaults:
+- **IP Address:** 192.168.1.222
+- **Subnet Mask:** 255.255.255.0
+- **Gateway:** 192.168.1.1
+- **HTTP Port:** 80
+
+To change IP address, edit `w5500_http_server.c` lines 150-153 and rebuild firmware.
+
+---
+
+## Software Installation
 
 ### Prerequisites
 
 - Python 3.7 or higher
-- Network connectivity to the Z1 controller node
-- The `requests` library for Python
+- pip package manager
+- Network connectivity to controller
 
-### Installing Python Tools
-
-First, install the required Python dependencies:
+### Install Python Dependencies
 
 ```bash
 pip3 install requests numpy
 ```
 
-Next, add the Z1 tools to your system PATH. You can either create symbolic links:
+### Configure Environment
 
 ```bash
-cd /path/to/neurofab_system/python_tools/bin
-sudo ln -s $(pwd)/* /usr/local/bin/
+# Add utilities to PATH
+export PATH=$PATH:/path/to/neurofab-z1-cluster/utilities
+
+# Set controller IP (optional, defaults to 192.168.1.222)
+export Z1_CONTROLLER_IP=192.168.1.222
 ```
 
-Or add the `bin` directory to your PATH environment variable:
+To make permanent, add to `~/.bashrc`:
 
 ```bash
-export PATH=$PATH:/path/to/neurofab_system/python_tools/bin
+echo 'export PATH=$PATH:/path/to/neurofab-z1-cluster/utilities' >> ~/.bashrc
+echo 'export Z1_CONTROLLER_IP=192.168.1.222' >> ~/.bashrc
+source ~/.bashrc
 ```
 
-To make this permanent, add the export command to your `~/.bashrc` or `~/.zshrc` file.
+---
 
-### Configuring Network Access
+## First Connection
 
-By default, the tools assume the controller node is at IP address `192.168.1.222`. If your controller is at a different address, you can specify it using the `-c` flag with each command:
+### Test Network Connectivity
 
 ```bash
-nls -c 192.168.1.100
+# Ping controller
+ping 192.168.1.222
+
+# Test HTTP API
+curl http://192.168.1.222/api/status
 ```
 
-Alternatively, you can set the `Z1_CONTROLLER_IP` environment variable:
+Expected response:
+```json
+{
+  "status": "online",
+  "uptime_ms": 12345,
+  "nodes_discovered": 0
+}
+```
+
+### Discover Nodes
 
 ```bash
-export Z1_CONTROLLER_IP=192.168.1.100
+python3 utilities/nls.py
 ```
 
-### Verifying Installation
-
-Test your installation by listing the cluster nodes:
-
-```bash
-nls
+Expected output:
+```
+Discovering nodes...
+Found 4 active nodes:
+  Node 0: READY
+  Node 1: READY
+  Node 2: READY
+  Node 3: READY
 ```
 
-If the installation is successful, you should see a list of active nodes with their status and memory information.
-
-## Command Reference
-
-### nls - List Nodes
-
-The `nls` command lists all compute nodes in the cluster.
-
-**Usage:**
-
-```bash
-nls [OPTIONS]
-```
-
-**Options:**
-
-- `-c, --controller IP`: Controller IP address (default: 192.168.1.222)
-- `-v, --verbose`: Show detailed node information
-- `-j, --json`: Output in JSON format for scripting
-
-**Examples:**
-
-```bash
-# List all nodes
-nls
-
-# Verbose output with memory info
-nls -v
-
-# JSON output for scripting
-nls -j
-
-# Use custom controller IP
-nls -c 192.168.1.100
-```
-
-**Output:**
-
-```
-NODE  STATUS    MEMORY      UPTIME
---------------------------------------------------
-   0  active    7.85 MB     2h 15m
-   1  active    7.85 MB     2h 15m
-   2  active    7.85 MB     2h 15m
-   3  active    7.85 MB     2h 15m
-
-Total: 4 nodes
-```
-
-### nping - Ping Nodes
-
-The `nping` command tests connectivity to cluster nodes.
-
-**Usage:**
-
-```bash
-nping NODE [OPTIONS]
-```
-
-**Arguments:**
-
-- `NODE`: Node ID (0-15) or "all"
-
-**Options:**
-
-- `-c, --controller IP`: Controller IP address
-- `-n, --count N`: Number of pings (default: 4)
-- `-v, --verbose`: Verbose output
-
-**Examples:**
+### Test Node Communication
 
 ```bash
 # Ping node 0
-nping 0
-
-# Ping all nodes
-nping all
-
-# Ping node 0 ten times
-nping 0 -n 10
-
-# Ping all nodes with verbose output
-nping all -v
+python3 utilities/nping.py 0
 ```
 
-**Output:**
-
+Expected output:
 ```
-4 packets transmitted, 4 received, 0.0% packet loss
-rtt min/avg/max = 2.45/3.12/4.01 ms
+Pinging node 0...
+Response received: 0x42
+Round-trip time: 12ms
 ```
 
-### nstat - Cluster Status
+---
 
-The `nstat` command displays cluster status and statistics.
+## CLI Tools Reference
+
+### nls.py - List Nodes
+
+**Description:** Discover and list all active nodes in the cluster.
 
 **Usage:**
-
 ```bash
-nstat [OPTIONS]
+python3 utilities/nls.py [options]
 ```
 
 **Options:**
+- `-c, --controller IP` - Controller IP address (default: 192.168.1.222)
+- `-p, --port PORT` - Controller port (default: 80)
 
-- `-c, --controller IP`: Controller IP address
-- `-w, --watch SECONDS`: Refresh every N seconds (live monitoring)
-- `-s, --snn`: Show SNN activity statistics
-
-**Examples:**
-
+**Example:**
 ```bash
-# Show cluster status once
-nstat
-
-# Live monitoring (refresh every 1 second)
-nstat -w 1
-
-# Show SNN activity statistics
-nstat -s
-
-# Live monitoring with SNN stats
-nstat -w 2 -s
+$ python3 utilities/nls.py
+Discovering nodes...
+Found 4 active nodes:
+  Node 0: READY
+  Node 1: READY
+  Node 2: READY
+  Node 3: READY
 ```
 
-**Output:**
+### nping.py - Ping Node
 
-```
-Z1 Cluster Status - 2025-11-11 23:30:45
-================================================================================
-
-Cluster Overview:
-  Total Nodes:     12
-  Active Nodes:    12
-  Inactive Nodes:  0
-  Total Memory:    94.20 MB
-
-Node Status:
-  NODE  STATUS    MEMORY      UPTIME      LED (R/G/B)
-  ----------------------------------------------------------------------
-     0  active    7.85 MB     2h 15m      0  /255/0  
-     1  active    7.85 MB     2h 15m      0  /255/0  
-     ...
-```
-
-### ncp - Copy to Nodes
-
-The `ncp` command copies files to node memory.
+**Description:** Test connectivity to a specific node.
 
 **Usage:**
-
 ```bash
-ncp SOURCE DEST [OPTIONS]
+python3 utilities/nping.py <node_id> [options]
 ```
 
 **Arguments:**
-
-- `SOURCE`: Local file path
-- `DEST`: Destination (node_id/location or node_id@address)
+- `node_id` - Node ID (0-15)
 
 **Options:**
+- `-c, --controller IP` - Controller IP address
+- `-t, --timeout MS` - Timeout in milliseconds (default: 1000)
 
-- `-c, --controller IP`: Controller IP address
-- `-v, --verbose`: Show progress
-
-**Named Memory Locations:**
-
-- `weights`: 0x20000000 (start of PSRAM)
-- `neurons`: 0x20100000 (1MB offset)
-- `code`: 0x20200000 (2MB offset)
-- `data`: 0x20300000 (3MB offset)
-- `scratch`: 0x20700000 (7MB offset)
-
-**Examples:**
-
+**Example:**
 ```bash
-# Copy to node 0 weights location
-ncp weights.bin 0/weights
-
-# Copy data to specific PSRAM address
-ncp data.bin 0@0x20000000
-
-# Copy with progress
-ncp data.bin 0/data -v
+$ python3 utilities/nping.py 0
+Pinging node 0...
+Response received: 0x42
+Round-trip time: 12ms
 ```
 
-**Output:**
+### ndeploy.py - Deploy SNN
 
-```
-weights.bin -> node 0:0x20000000 (128.00 KB)
-```
-
-### ncat - Display Node Data
-
-The `ncat` command reads and displays node memory contents.
+**Description:** Deploy a Spiking Neural Network to the cluster.
 
 **Usage:**
-
 ```bash
-ncat SOURCE [OPTIONS]
+python3 utilities/ndeploy.py <network_file> [options]
 ```
 
 **Arguments:**
-
-- `SOURCE`: Source (node_id/location or node_id@address)
+- `network_file` - Path to network definition JSON
 
 **Options:**
+- `-c, --controller IP` - Controller IP address
+- `-v, --verbose` - Verbose output
 
-- `-c, --controller IP`: Controller IP address
-- `-x, --hex`: Hexadecimal dump
-- `-b, --binary`: Binary output to stdout
-- `-n, --neurons`: Parse as neuron table
-- `-l, --length N`: Number of bytes to read
-
-**Examples:**
-
+**Example:**
 ```bash
-# Display weights table
-ncat 0/weights
+$ python3 utilities/ndeploy.py examples/xor_network.json
+Parsing network definition...
+  Total neurons: 256
+  Total synapses: 1024
+  Nodes required: 1
 
-# Hex dump
-ncat 0/weights -x
+Deploying to cluster...
+  Node 0: Writing 256 neurons (65536 bytes)...
+  Node 0: Sending load command...
+  Node 0: Deployment complete
 
-# Display from specific address
-ncat 0@0x20000000
-
-# Parse as neuron table
-ncat 0/neurons -n
-
-# Display 512 bytes
-ncat 0/data -l 512
+Network deployed successfully!
 ```
 
-**Output (neuron table):**
+### nstart.py - Start SNN Execution
 
-```
-Neuron Table at 0x20100000 (10 entries)
-================================================================================
-
-Neuron 0 (Entry 0):
-  Flags:              0x0001
-  Membrane Potential: 0.0000
-  Threshold:          1.0000
-  Last Spike:         0 μs
-  Synapses:           784/60
-  Synapse Table:      0x20000000
-  First Synapses:
-    [0] Source: 0, Weight: 128
-    [1] Source: 1, Weight: 132
-    ...
-```
-
-### nsnn - SNN Management
-
-The `nsnn` command manages Spiking Neural Networks on the cluster.
+**Description:** Start SNN execution on all nodes.
 
 **Usage:**
-
 ```bash
-nsnn COMMAND [ARGS] [OPTIONS]
+python3 utilities/nstart.py [options]
 ```
-
-**Commands:**
-
-- `deploy TOPOLOGY`: Deploy SNN from topology JSON file
-- `status`: Show SNN status and statistics
-- `start`: Start SNN execution
-- `stop`: Stop SNN execution
-- `monitor DURATION`: Monitor spike activity (milliseconds)
-- `inject SPIKES`: Inject input spikes from JSON file
 
 **Options:**
+- `-c, --controller IP` - Controller IP address
 
-- `-c, --controller IP`: Controller IP address
-
-**Examples:**
-
+**Example:**
 ```bash
-# Deploy SNN topology
-nsnn deploy network.json
+$ python3 utilities/nstart.py
+Starting SNN execution...
+  Node 0: Started
+  Node 1: Started
+  Node 2: Started
+  Node 3: Started
 
-# Show current SNN status
-nsnn status
-
-# Start SNN execution
-nsnn start
-
-# Monitor for 5 seconds
-nsnn monitor 5000
-
-# Inject input spikes
-nsnn inject input_pattern.json
+SNN execution started on 4 nodes.
 ```
 
-**Output (status):**
+### nstop.py - Stop SNN Execution
 
+**Description:** Stop SNN execution on all nodes.
+
+**Usage:**
+```bash
+python3 utilities/nstop.py [options]
 ```
-SNN Status:
-============================================================
-  State:           running
-  Network:         MNIST_SNN_Classifier
-  Neurons:         1794
-  Active Neurons:  342
-  Total Spikes:    15847
-  Spike Rate:      3169.40 Hz
-  Nodes Used:      12
+
+**Example:**
+```bash
+$ python3 utilities/nstop.py
+Stopping SNN execution...
+  Node 0: Stopped
+  Node 1: Stopped
+  Node 2: Stopped
+  Node 3: Stopped
+
+SNN execution stopped on 4 nodes.
 ```
+
+### ninject.py - Inject Spike
+
+**Description:** Inject a spike into a specific neuron.
+
+**Usage:**
+```bash
+python3 utilities/ninject.py <node_id> <neuron_id> [value] [options]
+```
+
+**Arguments:**
+- `node_id` - Target node ID (0-15)
+- `neuron_id` - Local neuron ID (0-1023)
+- `value` - Spike value (default: 1.0)
+
+**Options:**
+- `-c, --controller IP` - Controller IP address
+
+**Example:**
+```bash
+$ python3 utilities/ninject.py 0 100 1.5
+Injecting spike...
+  Node: 0
+  Neuron: 100
+  Value: 1.5
+
+Spike injected successfully!
+```
+
+---
 
 ## Working with SNNs
 
-### SNN Topology Format
+### Network Definition Format
 
-SNN topologies are defined in JSON format. The topology specifies the network structure, neuron parameters, and connectivity patterns.
-
-**Basic Structure:**
+Networks are defined in JSON format:
 
 ```json
 {
-  "network_name": "my_network",
-  "description": "Description of the network",
-  "neuron_count": 1000,
-  "layers": [
+  "name": "XOR Network",
+  "neurons": [
     {
-      "layer_id": 0,
-      "layer_type": "input",
-      "neuron_count": 100,
-      "neuron_ids": [0, 99],
+      "id": 0,
+      "node": 0,
       "threshold": 1.0,
-      "leak_rate": 0.0
+      "leak_rate": 0.1,
+      "refractory_period_us": 5000,
+      "synapses": [
+        {"source": 2, "weight": 0.8},
+        {"source": 3, "weight": 0.8}
+      ]
     },
-    {
-      "layer_id": 1,
-      "layer_type": "hidden",
-      "neuron_count": 800,
-      "neuron_ids": [100, 899],
-      "threshold": 1.0,
-      "leak_rate": 0.95,
-      "refractory_period_us": 1000
-    },
-    {
-      "layer_id": 2,
-      "layer_type": "output",
-      "neuron_count": 100,
-      "neuron_ids": [900, 999],
-      "threshold": 1.0,
-      "leak_rate": 0.95,
-      "refractory_period_us": 2000
-    }
-  ],
-  "connections": [
-    {
-      "source_layer": 0,
-      "target_layer": 1,
-      "connection_type": "fully_connected",
-      "weight_init": "random_normal",
-      "weight_mean": 0.5,
-      "weight_stddev": 0.1,
-      "delay_us": 1000
-    },
-    {
-      "source_layer": 1,
-      "target_layer": 2,
-      "connection_type": "fully_connected",
-      "weight_init": "random_normal",
-      "weight_mean": 0.5,
-      "weight_stddev": 0.1,
-      "delay_us": 1000
-    }
-  ],
-  "node_assignment": {
-    "strategy": "balanced",
-    "nodes": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    "neurons_per_node": 150
-  },
-  "simulation_params": {
-    "timestep_us": 1000,
-    "simulation_duration_ms": 100,
-    "input_encoding": "rate_coding",
-    "input_duration_ms": 50
-  }
-}
-```
-
-### Layer Types
-
-**Input Layer**
-
-Input layers receive external stimuli. They do not perform LIF integration and simply forward input values as spikes.
-
-- `layer_type`: "input"
-- `threshold`: Typically 1.0
-- `leak_rate`: 0.0 (no leakage)
-
-**Hidden Layer**
-
-Hidden layers perform computation using LIF neurons. They integrate incoming spikes and generate output spikes when the membrane potential exceeds the threshold.
-
-- `layer_type`: "hidden"
-- `threshold`: Spike threshold (typically 1.0)
-- `leak_rate`: Membrane leak rate (0.0-1.0, typically 0.95)
-- `refractory_period_us`: Refractory period in microseconds
-
-**Output Layer**
-
-Output layers are similar to hidden layers but are designated as the network's output. Their spike patterns represent the network's decision or prediction.
-
-- `layer_type`: "output"
-- Parameters same as hidden layers
-
-### Connection Types
-
-**Fully Connected**
-
-Every neuron in the source layer connects to every neuron in the target layer.
-
-```json
-{
-  "connection_type": "fully_connected",
-  "weight_init": "random_normal",
-  "weight_mean": 0.5,
-  "weight_stddev": 0.1
-}
-```
-
-**Sparse Random**
-
-Random sparse connectivity with a specified connection probability.
-
-```json
-{
-  "connection_type": "sparse_random",
-  "connection_probability": 0.1,
-  "weight_init": "random_normal",
-  "weight_mean": 0.5,
-  "weight_stddev": 0.1
-}
-```
-
-### Weight Initialization
-
-**Random Normal**
-
-Weights are drawn from a normal (Gaussian) distribution.
-
-```json
-{
-  "weight_init": "random_normal",
-  "weight_mean": 0.5,
-  "weight_stddev": 0.1
-}
-```
-
-**Random Uniform**
-
-Weights are drawn from a uniform distribution.
-
-```json
-{
-  "weight_init": "random_uniform",
-  "weight_min": 0.0,
-  "weight_max": 1.0
-}
-```
-
-**Constant**
-
-All weights are set to the same value.
-
-```json
-{
-  "weight_init": "constant",
-  "weight_value": 0.5
-}
-```
-
-### Node Assignment Strategies
-
-**Balanced**
-
-Neurons are evenly distributed across all specified nodes.
-
-```json
-{
-  "strategy": "balanced",
-  "nodes": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-}
-```
-
-**Layer-Based**
-
-Entire layers are assigned to specific nodes. This can improve performance for layer-to-layer communication.
-
-```json
-{
-  "strategy": "layer_based",
-  "nodes": [0, 1, 2, 3]
-}
-```
-
-### Deploying an SNN
-
-To deploy an SNN to the cluster:
-
-1. Create a topology JSON file (see examples in `python_tools/examples/`)
-2. Deploy using the `nsnn deploy` command
-3. Start execution with `nsnn start`
-4. Monitor activity with `nsnn monitor`
-
-**Example:**
-
-```bash
-# Deploy the network
-nsnn deploy my_network.json
-
-# Check deployment status
-nsnn status
-
-# Start execution
-nsnn start
-
-# Monitor for 10 seconds
-nsnn monitor 10000
-```
-
-### Injecting Input Spikes
-
-To provide input to the network, create a JSON file with spike events:
-
-```json
-{
-  "spikes": [
-    {"neuron_id": 0, "value": 1.0},
-    {"neuron_id": 1, "value": 0.8},
-    {"neuron_id": 2, "value": 0.5}
+    ...
   ]
 }
 ```
 
-Then inject the spikes:
+### Deploying a Network
+
+1. **Create Network Definition:**
+   - Define neurons with parameters
+   - Specify synaptic connections
+   - Assign neurons to nodes
+
+2. **Deploy to Cluster:**
+   ```bash
+   python3 utilities/ndeploy.py my_network.json
+   ```
+
+3. **Start Execution:**
+   ```bash
+   python3 utilities/nstart.py
+   ```
+
+4. **Inject Test Inputs:**
+   ```bash
+   python3 utilities/ninject.py 0 0 1.0
+   python3 utilities/ninject.py 0 1 1.0
+   ```
+
+5. **Monitor Activity:**
+   - Check OLED display for spike statistics
+   - View serial output for detailed logs
+
+6. **Stop Execution:**
+   ```bash
+   python3 utilities/nstop.py
+   ```
+
+---
+
+## HTTP API Usage
+
+### Using curl
 
 ```bash
-nsnn inject input_spikes.json
+# Get system status
+curl http://192.168.1.222/api/status
+
+# Discover nodes
+curl -X POST http://192.168.1.222/api/nodes/discover
+
+# Ping node 0
+curl -X POST http://192.168.1.222/api/nodes/0/ping
+
+# Start SNN execution
+curl -X POST http://192.168.1.222/api/snn/start
+
+# Stop SNN execution
+curl -X POST http://192.168.1.222/api/snn/stop
 ```
 
-## Advanced Topics
-
-### Direct Memory Access
-
-The `ncp` and `ncat` commands provide direct access to node memory, which is useful for debugging and advanced applications.
-
-**Reading Memory:**
-
-```bash
-# Read 1KB from address 0x20000000
-ncat 0@0x20000000 -l 1024 -x
-```
-
-**Writing Memory:**
-
-```bash
-# Write binary file to address 0x20000000
-ncp data.bin 0@0x20000000
-```
-
-### Scripting with Python API
-
-For advanced automation, you can use the Python API directly:
+### Using Python requests
 
 ```python
-from z1_client import Z1Client
-import json
+import requests
 
-# Connect to cluster
-client = Z1Client(controller_ip='192.168.1.222')
+BASE_URL = "http://192.168.1.222"
 
-# List nodes
-nodes = client.list_nodes()
-for node in nodes:
-    print(f"Node {node.node_id}: {node.status}")
+# Get status
+response = requests.get(f"{BASE_URL}/api/status")
+print(response.json())
 
-# Deploy SNN
-with open('network.json', 'r') as f:
-    topology = json.load(f)
-result = client.deploy_snn(topology)
-print(f"Deployed {result['neurons_deployed']} neurons")
+# Discover nodes
+response = requests.post(f"{BASE_URL}/api/nodes/discover")
+nodes = response.json()["active_nodes"]
+print(f"Found {len(nodes)} nodes")
 
 # Start SNN
-client.start_snn()
-
-# Monitor activity
-spikes = client.get_spike_activity(duration_ms=5000)
-print(f"Captured {len(spikes)} spikes")
+response = requests.post(f"{BASE_URL}/api/snn/start")
+print(response.json())
 ```
 
-### Multi-Backplane Configurations
+Full API documentation: [API_REFERENCE.md](API_REFERENCE.md)
 
-For large-scale deployments, multiple backplanes can be networked together. Each backplane has its own controller node with a unique IP address. The Python tools can manage multiple controllers by specifying different IPs.
-
-**Example:**
-
-```bash
-# List nodes on backplane 1
-nls -c 192.168.1.222
-
-# List nodes on backplane 2
-nls -c 192.168.1.223
-```
+---
 
 ## Troubleshooting
 
-### Connection Refused
+### Controller Not Responding
 
-**Problem:** Commands fail with "Connection refused" error.
-
-**Solutions:**
-
-1. Verify the controller IP address is correct
-2. Check that the controller node is powered on
-3. Verify network connectivity: `ping 192.168.1.222`
-4. Check that the HTTP server is running on the controller
-
-### Node Not Responding
-
-**Problem:** A node doesn't respond to commands.
+**Symptoms:** Cannot ping controller, HTTP requests timeout
 
 **Solutions:**
+1. Check power supply (5V, ≥1A)
+2. Verify Ethernet cable connection
+3. Check network configuration (IP, subnet, gateway)
+4. Verify OLED shows "Z1 Controller Ready"
+5. Connect USB and check serial output (115200 baud)
+6. Try power cycle (disconnect power for 10 seconds)
 
-1. Use `nping` to test node connectivity: `nping 0`
-2. Use `nls` to check node status
-3. Check node LED indicators for error states
-4. Try resetting the node (if reset command is implemented)
+### Node Not Discovered
 
-### Memory Access Errors
-
-**Problem:** Memory read/write operations fail.
+**Symptoms:** Node missing from `nls` output
 
 **Solutions:**
-
-1. Verify the address is within PSRAM range (0x20000000-0x207FFFFF)
-2. Check that the node has sufficient free memory using `nls -v`
-3. Ensure data size doesn't exceed available memory
-4. Try smaller transfer sizes for large operations
+1. Verify matrix bus connections (GPIO0-15)
+2. Check node ID strapping (GPIO40-43)
+3. Verify power supply to node
+4. Check LED startup sequence (should show R→G→B)
+5. Connect USB and check serial output
+6. Verify node firmware is flashed correctly
+7. Try manual ping: `python3 utilities/nping.py <node_id>`
 
 ### SNN Deployment Fails
 
-**Problem:** SNN deployment fails or produces errors.
+**Symptoms:** Deployment command returns error
 
 **Solutions:**
+1. Verify all nodes are discovered
+2. Check neuron count ≤ 1024 per node
+3. Validate JSON format
+4. Check PSRAM initialization in serial logs
+5. Verify sufficient memory available
+6. Try deploying to single node first
 
-1. Validate the topology JSON file for syntax errors
-2. Check that neuron count doesn't exceed cluster capacity
-3. Verify that layer neuron IDs are sequential and non-overlapping
-4. Ensure connection definitions reference valid layer IDs
-5. Check that the number of synapses per neuron doesn't exceed 60
+### Spikes Not Propagating
 
-### Low Spike Rate
-
-**Problem:** The SNN shows very low or zero spike activity.
+**Symptoms:** No inter-node spike activity
 
 **Solutions:**
+1. Verify SNN is started: `python3 utilities/nstart.py`
+2. Check synaptic connections in network definition
+3. Verify source and target neurons on different nodes
+4. Monitor serial output for spike routing messages
+5. Check matrix bus signal integrity
+6. Verify multi-frame protocol working
 
-1. Check that input spikes are being injected correctly
-2. Verify neuron thresholds are not too high
-3. Check that weights are properly initialized
-4. Ensure the leak rate is appropriate (typically 0.95)
-5. Monitor membrane potentials using `ncat` with neuron table parsing
+### OLED Display Issues
 
-## Conclusion
+**Symptoms:** Display blank or garbled
 
-This guide provides a comprehensive overview of the NeuroFab Z1 cluster management system. For additional technical details, refer to the system design documentation in `docs/system_design.md`. For questions or support, consult the NeuroFab documentation or contact the development team.
+**Solutions:**
+1. Check I2C connections (SDA=GPIO4, SCL=GPIO5)
+2. Verify I2C address (0x3C default)
+3. Check power supply to display (3.3V)
+4. Try different I2C speed (edit firmware)
+5. Display is optional - system works without it
+
+---
+
+## Advanced Topics
+
+### Custom Network Topologies
+
+Create complex networks with:
+- Multiple layers (input, hidden, output)
+- Recurrent connections
+- Lateral inhibition
+- Configurable time constants
+
+### STDP Learning
+
+Enable online learning:
+- Configure STDP parameters in neuron definition
+- Weight updates occur during execution
+- No redeployment needed
+
+### Performance Optimization
+
+- Minimize inter-node connections (reduce bus traffic)
+- Use neuron cache effectively (locality of reference)
+- Adjust simulation timestep for speed/accuracy tradeoff
+- Monitor cache hit rate in serial output
+
+### Firmware Customization
+
+Build from source to customize:
+- Neuron model parameters
+- Cache size and policy
+- Network configuration (IP address, port)
+- Display messages and formatting
+
+See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for build instructions.
+
+---
+
+## Next Steps
+
+- Read [SNN_GUIDE.md](SNN_GUIDE.md) for detailed neuron model documentation
+- Review [API_REFERENCE.md](API_REFERENCE.md) for complete API specification
+- Study [ARCHITECTURE.md](ARCHITECTURE.md) to understand system design
+- Check [CODE_WALKTHROUGH.md](CODE_WALKTHROUGH.md) for firmware internals
+
+---
+
+**Version:** 3.0  
+**Last Updated:** November 13, 2025  
+**Status:** Production Ready
