@@ -43,7 +43,7 @@ bool z1_bus_send_command(uint8_t target_id, uint8_t command, const uint8_t* data
 /**
  * Node discovery and management
  */
-int z1_discover_nodes_sequential(uint8_t* active_nodes);
+bool z1_discover_nodes_sequential(bool active_nodes_out[16]);
 bool z1_reset_node(uint8_t node_id);
 bool z1_bus_ping_node(uint8_t node_id);
 

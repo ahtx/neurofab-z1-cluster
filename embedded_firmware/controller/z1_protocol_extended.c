@@ -35,23 +35,7 @@ bool z1_bus_send_command(uint8_t target_node, uint8_t command,
     return z1_send_multiframe(target_node, command, data, length);
 }
 
-/**
- * Send multi-frame message (stub implementation)
- */
-bool z1_send_multiframe(uint8_t target_node, uint8_t msg_type, 
-                        const uint8_t* data, uint16_t length) {
-    // TODO: Implement multi-frame transfer protocol
-    printf("[Z1 Protocol] Multi-frame send not yet implemented\n");
-    return false;
-}
-
-/**
- * Receive multi-frame message (stub implementation)
- */
-int z1_receive_multiframe(uint8_t* buffer, uint16_t max_length, uint32_t timeout_ms) {
-    // TODO: Implement multi-frame receive protocol
-    return -1;
-}
+// z1_send_multiframe and z1_receive_multiframe are implemented in z1_multiframe.c
 
 /**
  * Read memory from remote node (stub implementation)
