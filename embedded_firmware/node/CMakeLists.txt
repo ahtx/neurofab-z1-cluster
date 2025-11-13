@@ -21,7 +21,9 @@ pico_sdk_init()
 # Node firmware executable
 add_executable(z1_node
     node.c
-    z1_snn_engine.c
+    z1_snn_engine_v2.c
+    z1_neuron_cache.c
+    z1_psram_neurons.c
     z1_multiframe.c
     psram_rp2350.c
     z1_matrix_bus.c

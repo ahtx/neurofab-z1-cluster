@@ -407,8 +407,9 @@ static inline bool z1_spike_queue_full(const z1_spike_queue_t* queue) {
 // Global State
 // ============================================================================
 
-extern z1_snn_engine_state_t g_snn_state;
-extern z1_spike_queue_t g_spike_queue;
+// Global state is now internal to z1_snn_engine_v2.c
+// extern z1_snn_engine_state_t g_snn_state;
+// extern z1_spike_queue_t g_spike_queue;
 
 // ============================================================================
 // Compatibility Macros (header declares z1_snn_*, implementation has z1_snn_engine_*)
