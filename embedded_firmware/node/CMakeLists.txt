@@ -22,6 +22,7 @@ pico_sdk_init()
 add_executable(z1_node
     node.c
     z1_snn_engine.c
+    z1_multiframe.c
     psram_rp2350.c
     z1_matrix_bus.c
     ssd1306.c

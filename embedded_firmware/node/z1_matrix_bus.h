@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "../common/z1_protocol.h"
 
 // Z1 Matrix Bus GPIO Pin Definitions
 // Multi-master 16-bit bus connecting 13 RP2350B nodes (12 nodes + 1 controller)
@@ -37,40 +38,10 @@
 #define BUS14_PIN       26    // Data bit 14
 #define BUS15_PIN       27    // Data bit 15
 
-// Node ID Definitions
-#define Z1_CONTROLLER_ID    16    // Primary controller node ID
-#define Z1_BROADCAST_ID     31    // Broadcast to all nodes
-#define Z1_MAX_NODES        16    // Maximum number of regular nodes (0-15)
-
-// Protocol Constants
-#define Z1_FRAME_HEADER     0xAA  // First byte of every connection
+// Protocol Constants (additional to z1_protocol.h)
 #define Z1_FRAMES_PER_MSG   2     // Header frame + command frame
 
-// Command Definitions
-#define Z1_CMD_GREEN_LED    0x10  // Green LED control (0-255 PWM)
-#define Z1_CMD_RED_LED      0x20  // Red LED control (0-255 PWM)
-#define Z1_CMD_BLUE_LED     0x30  // Blue LED control (0-255 PWM)
-#define Z1_CMD_STATUS       0x40  // Status request
-#define Z1_CMD_LED_CONTROL  0x70  // Generic LED control
-#define Z1_CMD_PING         0x99  // Ping command (data: 0xA5)
-
-// SNN Engine Commands
-#define Z1_CMD_SNN_SPIKE         0x50  // SNN spike routing command
-#define Z1_CMD_SNN_LOAD_TABLE    0x51  // Load neuron table from PSRAM
-#define Z1_CMD_SNN_START         0x52  // Start SNN execution
-#define Z1_CMD_SNN_STOP          0x53  // Stop SNN execution
-#define Z1_CMD_SNN_INJECT_SPIKE  0x54  // Inject external spike
-#define Z1_CMD_SNN_GET_STATUS    0x55  // Get SNN engine status
-
-// LED Values for generic LED control
-#define Z1_LED_GREEN        0x01
-#define Z1_LED_RED          0x02
-
-// Ping Data
-#define Z1_PING_DATA        0xA5  // Standard ping payload
-
 // Legacy compatibility
-#define Z1_BROADCAST_ADDR   Z1_BROADCAST_ID
 #define BUSACT_PIN          BUSATTN_PIN
 
 // Timing Configuration (microseconds)

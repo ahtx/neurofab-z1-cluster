@@ -8,6 +8,7 @@
 
 #include "z1_protocol_extended.h"
 #include "z1_matrix_bus.h"
+#include "z1_multiframe.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -27,13 +28,11 @@ bool z1_bus_send_command(uint8_t target_node, uint8_t command,
         return z1_bus_write(target_node, command, data[0]);
     }
     
-    // For multi-byte commands, we need to use multi-frame protocol
-    // For now, just send the command byte and log a warning
-    printf("[Z1 Protocol] Warning: Multi-byte command 0x%02X with %d bytes not fully implemented\n", 
+    // For multi-byte commands, use multi-frame protocol
+    printf("[Z1 Protocol] Sending multi-byte command 0x%02X with %d bytes\n", 
            command, length);
     
-    // Send command byte only
-    return z1_bus_write(target_node, command, 0);
+    return z1_send_multiframe(target_node, command, data, length);
 }
 
 /**
@@ -99,11 +98,24 @@ bool z1_reset_node(uint8_t node_id) {
 }
 
 /**
- * Send spike message (stub implementation)
+ * Send spike message
  */
 bool z1_send_spike(const z1_spike_msg_t* spike) {
-    // TODO: Implement spike message protocol
-    return false;
+    if (!spike) return false;
+    
+    // Extract target node from global neuron ID
+    uint8_t target_node = (spike->global_neuron_id >> 16) & 0xFF;
+    
+    // Pack spike data: [global_id:4][timestamp:4][flags:1]
+    uint8_t spike_data[9];
+    memcpy(&spike_data[0], &spike->global_neuron_id, 4);
+    memcpy(&spike_data[4], &spike->timestamp_us, 4);
+    spike_data[8] = spike->flags;
+    
+    printf("[Z1 Protocol] Sending spike (neuron %u) to node %d\n", 
+           (unsigned int)spike->global_neuron_id, target_node);
+    
+    return z1_send_multiframe(target_node, Z1_CMD_SNN_SPIKE, spike_data, sizeof(spike_data));
 }
 
 /**

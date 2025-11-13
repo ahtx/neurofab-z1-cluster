@@ -13,6 +13,9 @@
 
 // Include the Z1 Matrix Bus library
 #include "z1_matrix_bus.h"
+#include "z1_snn_engine.h"
+#include "psram_rp2350.h"
+#include "z1_multiframe.h"
 
 // LED Pin Definitions for nodes (PWM capable pins)
 #define LED_GREEN      44
@@ -28,6 +31,14 @@ static uint8_t led_blue_pwm = 0;
 static bool ping_response_pending = false;
 static uint8_t ping_response_target = 0;
 static uint8_t ping_response_data = 0;
+
+// SNN engine state
+static bool snn_initialized = false;
+static bool snn_running = false;
+
+// Multi-frame receive buffer
+static uint8_t multiframe_buffer[4096];
+static uint8_t multiframe_command = 0;
 
 // PWM slice numbers for LEDs
 static uint red_slice, green_slice, blue_slice;
@@ -122,45 +133,135 @@ void process_bus_command(uint8_t command, uint8_t data) {
            Z1_NODE_ID, command, data, z1_last_sender_id);
     
     switch (command) {
+        // LED Control Commands
         case Z1_CMD_GREEN_LED:
             led_green_pwm = data;
             set_led_pwm(LED_GREEN, led_green_pwm);
-            printf("[Node %d] ✅ GREEN LED PWM updated: %d/255 (from node %d)\n", 
-                   Z1_NODE_ID, data, z1_last_sender_id);
+            printf("[Node %d] ✅ GREEN LED PWM updated: %d/255\n", Z1_NODE_ID, data);
             break;
             
         case Z1_CMD_RED_LED:
             led_red_pwm = data;
             set_led_pwm(LED_RED, led_red_pwm);
-            printf("[Node %d] ✅ RED LED PWM updated: %d/255 (from node %d)\n", 
-                   Z1_NODE_ID, data, z1_last_sender_id);
+            printf("[Node %d] ✅ RED LED PWM updated: %d/255\n", Z1_NODE_ID, data);
             break;
             
         case Z1_CMD_BLUE_LED:
             led_blue_pwm = data;
             set_led_pwm(LED_BLUE, led_blue_pwm);
-            printf("[Node %d] ✅ BLUE LED PWM updated: %d/255 (from node %d)\n", 
-                   Z1_NODE_ID, data, z1_last_sender_id);
+            printf("[Node %d] ✅ BLUE LED PWM updated: %d/255\n", Z1_NODE_ID, data);
             break;
             
         case Z1_CMD_STATUS:
-            printf("[Node %d] 📊 STATUS response to node %d - R:%d G:%d B:%d\n", 
-                   Z1_NODE_ID, z1_last_sender_id, led_red_pwm, led_green_pwm, led_blue_pwm);
+            printf("[Node %d] 📊 STATUS response - R:%d G:%d B:%d\n", 
+                   Z1_NODE_ID, led_red_pwm, led_green_pwm, led_blue_pwm);
             break;
             
         case Z1_CMD_PING:
-            printf("[Node %d] 🏓 PING received from node %d with data 0x%02X\n", 
-                   Z1_NODE_ID, z1_last_sender_id, data);
-            // DEFER response - don't call z1_bus_write from interrupt context!
-            printf("[Node %d] 🏓 Deferring PING RESPONSE to node %d\n", Z1_NODE_ID, z1_last_sender_id);
+            printf("[Node %d] 🏓 PING received with data 0x%02X\n", Z1_NODE_ID, data);
             ping_response_pending = true;
             ping_response_target = z1_last_sender_id;
             ping_response_data = data;
             break;
+        
+        // Multi-frame Protocol Commands
+        case Z1_CMD_FRAME_START:
+            multiframe_command = data;  // Command is passed as data byte
+            z1_multiframe_handle_start(z1_last_sender_id, data);
+            printf("[Node %d] 📦 FRAME_START for command 0x%02X\n", Z1_NODE_ID, data);
+            break;
+            
+        case Z1_CMD_FRAME_DATA:
+            // data contains sequence number, next frame has actual data
+            printf("[Node %d] 📦 FRAME_DATA seq %d\n", Z1_NODE_ID, data);
+            break;
+            
+        case Z1_CMD_FRAME_END:
+            z1_multiframe_handle_end(data);  // data is checksum
+            printf("[Node %d] 📦 FRAME_END (checksum 0x%02X)\n", Z1_NODE_ID, data);
+            
+            // Process the received multi-frame command
+            if (z1_multiframe_rx_complete()) {
+                uint16_t length = z1_multiframe_rx_length();
+                printf("[Node %d] Processing multiframe command 0x%02X (%d bytes)\n",
+                       Z1_NODE_ID, multiframe_command, length);
+                       
+                // Handle the command based on type
+                if (multiframe_command == Z1_CMD_MEM_WRITE) {
+                    // Memory write: [addr:4][data:N]
+                    if (length >= 4) {
+                        uint32_t addr;
+                        memcpy(&addr, multiframe_buffer, 4);
+                        uint16_t data_len = length - 4;
+                        printf("[Node %d] Writing %d bytes to PSRAM addr 0x%08X\n",
+                               Z1_NODE_ID, data_len, (unsigned int)addr);
+                        psram_write(addr, multiframe_buffer + 4, data_len);
+                    }
+                }
+                
+                z1_multiframe_rx_reset();
+            }
+            break;
+        
+        // SNN Engine Commands
+        case Z1_CMD_SNN_LOAD_TABLE:
+            if (snn_initialized) {
+                printf("[Node %d] 🧠 Loading neuron table from PSRAM...\n", Z1_NODE_ID);
+                // Assume table is at standard address
+                uint32_t table_addr = 0x20100000;
+                uint16_t neuron_count = data;  // Neuron count passed as data
+                if (z1_snn_load_table(table_addr, neuron_count)) {
+                    printf("[Node %d] ✅ Loaded %d neurons\n", Z1_NODE_ID, neuron_count);
+                    set_led_pwm(LED_GREEN, 100);  // Green = loaded
+                } else {
+                    printf("[Node %d] ❌ Failed to load neurons\n", Z1_NODE_ID);
+                    set_led_pwm(LED_RED, 100);  // Red = error
+                }
+            }
+            break;
+            
+        case Z1_CMD_SNN_START:
+            if (snn_initialized && !snn_running) {
+                printf("[Node %d] 🧠 Starting SNN execution\n", Z1_NODE_ID);
+                if (z1_snn_start()) {
+                    snn_running = true;
+                    set_led_pwm(LED_BLUE, 100);  // Blue = running
+                    printf("[Node %d] ✅ SNN started\n", Z1_NODE_ID);
+                }
+            }
+            break;
+            
+        case Z1_CMD_SNN_STOP:
+            if (snn_running) {
+                printf("[Node %d] 🧠 Stopping SNN execution\n", Z1_NODE_ID);
+                z1_snn_stop();
+                snn_running = false;
+                set_led_pwm(LED_BLUE, 0);
+                printf("[Node %d] ✅ SNN stopped\n", Z1_NODE_ID);
+            }
+            break;
+            
+        case Z1_CMD_SNN_INPUT_SPIKE:
+            if (snn_running) {
+                // data byte contains local neuron ID (low 8 bits)
+                uint16_t local_neuron_id = data;
+                printf("[Node %d] 🧠 Injecting spike to neuron %d\n", 
+                       Z1_NODE_ID, local_neuron_id);
+                z1_snn_inject_input(local_neuron_id, 1.0f);
+            }
+            break;
+            
+        case Z1_CMD_SNN_SPIKE:
+            if (snn_running) {
+                // Inter-node spike routing
+                // data byte contains source node ID
+                printf("[Node %d] 🧠 Received spike from node %d\n", Z1_NODE_ID, data);
+                // Full spike data would come via multi-frame
+            }
+            break;
             
         default:
-            printf("[Node %d] ❓ UNKNOWN command 0x%02X from node %d\n", 
-                   Z1_NODE_ID, command, z1_last_sender_id);
+            printf("[Node %d] ❓ UNKNOWN command 0x%02X\n", Z1_NODE_ID, command);
             break;
     }
     
@@ -212,6 +313,30 @@ int main() {
     }
     
     printf("Node %d: ✅ Bus initialization complete\n", Z1_NODE_ID);
+    
+    // Initialize PSRAM
+    printf("Node %d: Initializing PSRAM...\n", Z1_NODE_ID);
+    if (!psram_init()) {
+        printf("Node %d: ❌ FATAL: Failed to initialize PSRAM\n", Z1_NODE_ID);
+        return -1;
+    }
+    printf("Node %d: ✅ PSRAM initialized (8MB available)\n", Z1_NODE_ID);
+    
+    // Initialize multi-frame receive buffer
+    z1_multiframe_rx_init(multiframe_buffer, sizeof(multiframe_buffer));
+    printf("Node %d: ✅ Multi-frame RX buffer ready (%d bytes)\n", 
+           Z1_NODE_ID, (int)sizeof(multiframe_buffer));
+    
+    // Initialize SNN engine
+    printf("Node %d: Initializing SNN engine...\n", Z1_NODE_ID);
+    if (!z1_snn_init(Z1_NODE_ID)) {
+        printf("Node %d: ❌ WARNING: Failed to initialize SNN engine\n", Z1_NODE_ID);
+        snn_initialized = false;
+    } else {
+        printf("Node %d: ✅ SNN engine initialized\n", Z1_NODE_ID);
+        snn_initialized = true;
+    }
+    
     printf("Node %d: 🔄 Entering main loop - listening for bus transactions\n", Z1_NODE_ID);
     
     // Startup LED sequence to show we're alive
@@ -242,6 +367,12 @@ int main() {
         
         // Call bus handler (mostly handled by interrupts now)
         z1_bus_handle_interrupt();
+        
+        // Process SNN engine if running
+        if (snn_running) {
+            uint32_t current_time_us = time_us_32();
+            z1_snn_step(current_time_us);
+        }
         
         // Handle deferred ping responses (outside interrupt context)
         if (ping_response_pending) {

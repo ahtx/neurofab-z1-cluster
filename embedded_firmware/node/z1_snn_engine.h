@@ -410,4 +410,15 @@ static inline bool z1_spike_queue_full(const z1_spike_queue_t* queue) {
 extern z1_snn_engine_state_t g_snn_state;
 extern z1_spike_queue_t g_spike_queue;
 
+// ============================================================================
+// Compatibility Macros (header declares z1_snn_*, implementation has z1_snn_engine_*)
+// ============================================================================
+
+#define z1_snn_init(node_id)                z1_snn_engine_init(node_id)
+#define z1_snn_load_table(addr, count)      z1_snn_engine_load_network(addr, count)
+#define z1_snn_start()                      z1_snn_engine_start()
+#define z1_snn_stop()                       z1_snn_engine_stop()
+#define z1_snn_step(timestep)               z1_snn_engine_step(timestep)
+#define z1_snn_inject_input(id, value)      z1_snn_engine_inject_spike(id, value)
+
 #endif // Z1_SNN_ENGINE_H
