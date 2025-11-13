@@ -147,3 +147,7 @@ bool z1_query_snn_activity(uint8_t node_id, z1_snn_activity_t* activity) {
     // TODO: Implement activity query protocol
     return false;
 }
+
+// z1_discover_nodes_sequential and z1_bus_ping_node are implemented in z1_matrix_bus.c
+
+// Duplicate functions removed - kept earlier implementations

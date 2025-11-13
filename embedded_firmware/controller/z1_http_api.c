@@ -205,7 +205,7 @@ void handle_get_node(http_connection_t* conn, uint8_t node_id) {
     pos = json_add_int(json, pos, sizeof(json), "memory_free", info.free_memory, false);
     pos = json_add_int(json, pos, sizeof(json), "uptime_ms", info.uptime_ms, false);
     pos = json_add_int(json, pos, sizeof(json), "neuron_count", info.neuron_count, false);
-    pos = json_add_int(json, pos, sizeof(json), "spike_count", info.spike_count, true);
+    pos = json_add_int(json, pos, sizeof(json), "spike_count", g_snn_spike_count, true);
     json_end_object(json, pos, sizeof(json));
     
     z1_http_send_json(conn, 200, json);

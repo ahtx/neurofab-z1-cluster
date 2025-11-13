@@ -23,7 +23,7 @@
 /**
  * Send spike to target node
  */
-bool z1_send_spike(z1_spike_msg_t* spike_msg);
+bool z1_send_spike(const z1_spike_msg_t* spike_msg);
 
 /**
  * Get node information
@@ -39,5 +39,24 @@ bool z1_get_snn_activity(uint8_t node_id, z1_snn_activity_t* activity);
  * Send multi-byte command with data
  */
 bool z1_bus_send_command(uint8_t target_id, uint8_t command, const uint8_t* data, uint16_t length);
+
+/**
+ * Node discovery and management
+ */
+int z1_discover_nodes_sequential(uint8_t* active_nodes);
+bool z1_reset_node(uint8_t node_id);
+bool z1_bus_ping_node(uint8_t node_id);
+
+/**
+ * Memory operations
+ */
+int z1_read_node_memory(uint8_t node_id, uint32_t addr, uint8_t* buffer, uint16_t length);
+
+/**
+ * SNN coordination
+ */
+bool z1_query_snn_activity(uint8_t node_id, z1_snn_activity_t* activity);
+bool z1_start_snn_all(void);
+bool z1_stop_snn_all(void);
 
 #endif // Z1_PROTOCOL_EXTENDED_H

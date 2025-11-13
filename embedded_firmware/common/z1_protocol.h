@@ -175,3 +175,7 @@ typedef struct {
 } z1_snn_activity_t;
 
 #endif // Z1_PROTOCOL_H
+
+// Firmware constants
+#define Z1_FIRMWARE_MAX_SIZE (2 * 1024 * 1024)  // 2 MB max firmware size
+

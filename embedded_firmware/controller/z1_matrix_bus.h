@@ -88,7 +88,7 @@ void z1_bus_clear_ping_history(void);
 bool z1_bus_handle_ping_response(uint8_t sender_node, uint8_t data_received);
 
 // Node discovery - sequential ping with proper timing
-bool z1_discover_nodes_sequential(bool active_nodes_out[16]);
+// (Declaration moved to z1_protocol_extended.h)
 
 // Callback function - must be implemented by application (node.c)
 extern void z1_bus_process_command(uint8_t command, uint8_t data);
