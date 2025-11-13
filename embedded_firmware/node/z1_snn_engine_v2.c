@@ -11,6 +11,7 @@
 #include "z1_psram_neurons.h"
 #include "z1_neuron_cache.h"
 #include "z1_matrix_bus.h"
+#include "z1_multiframe.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -283,7 +284,19 @@ void z1_snn_engine_step(uint32_t current_time_us) {
             }
         } else {
             // Remote neuron - route via matrix bus
-            // TODO: Send spike to target node
+            // Pack spike data: [global_id:4][timestamp:4][flags:1]
+            uint8_t spike_data[9];
+            memcpy(&spike_data[0], &spike.global_neuron_id, 4);
+            memcpy(&spike_data[4], &spike.timestamp_us, 4);
+            spike_data[8] = spike.flags;
+            
+            // Send spike to target node via multi-frame protocol
+            if (z1_send_multiframe(target_node, Z1_CMD_SNN_SPIKE, spike_data, sizeof(spike_data))) {
+                printf("[SNN] Routed spike (neuron %u) to node %d\n", 
+                       (unsigned int)spike.global_neuron_id, target_node);
+            } else {
+                printf("[SNN] ERROR: Failed to route spike to node %d\n", target_node);
+            }
         }
     }
     

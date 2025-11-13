@@ -610,8 +610,15 @@ void handle_post_snn_deploy(http_connection_t* conn, const char* body, uint16_t 
             psram_addr += chunk_size;
         }
         
-        // Send load command to node
-        z1_bus_send_command(node_id, Z1_CMD_SNN_LOAD_TABLE, NULL, 0);
+        // Calculate neuron count from data length (each neuron is 256 bytes)
+        uint16_t neuron_count = data_length / 256;
+        
+        // Send load command to node with neuron count
+        uint8_t load_cmd_data[2];
+        memcpy(load_cmd_data, &neuron_count, 2);
+        z1_bus_send_command(node_id, Z1_CMD_SNN_LOAD_TABLE, load_cmd_data, 2);
+        
+        printf("[API] Sent SNN_LOAD_TABLE to node %u: %u neurons\n", node_id, neuron_count);
         
         data_ptr += 3 + data_length;
         remaining -= 3 + data_length;

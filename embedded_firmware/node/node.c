@@ -207,9 +207,20 @@ void process_bus_command(uint8_t command, uint8_t data) {
         case Z1_CMD_SNN_LOAD_TABLE:
             if (snn_initialized) {
                 printf("[Node %d] 🧠 Loading neuron table from PSRAM...\n", Z1_NODE_ID);
+                // Neuron count comes via multi-frame: [neuron_count:2]
+                uint16_t neuron_count = 0;
+                if (z1_multiframe_rx_complete() && z1_multiframe_rx_length() >= 2) {
+                    memcpy(&neuron_count, multiframe_buffer, 2);
+                    z1_multiframe_rx_reset();
+                } else {
+                    // Fallback: try to get from data byte (legacy)
+                    neuron_count = data;
+                }
+                
+                printf("[Node %d] 🧠 Loading %d neurons from PSRAM...\n", Z1_NODE_ID, neuron_count);
+                
                 // Assume table is at standard address
                 uint32_t table_addr = 0x20100000;
-                uint16_t neuron_count = data;  // Neuron count passed as data
                 if (z1_snn_load_table(table_addr, neuron_count)) {
                     printf("[Node %d] ✅ Loaded %d neurons\n", Z1_NODE_ID, neuron_count);
                     set_led_pwm(LED_GREEN, 100);  // Green = loaded
@@ -254,9 +265,29 @@ void process_bus_command(uint8_t command, uint8_t data) {
         case Z1_CMD_SNN_SPIKE:
             if (snn_running) {
                 // Inter-node spike routing
-                // data byte contains source node ID
-                printf("[Node %d] 🧠 Received spike from node %d\n", Z1_NODE_ID, data);
-                // Full spike data would come via multi-frame
+                // Spike data comes via multi-frame: [global_id:4][timestamp:4][flags:1]
+                if (z1_multiframe_rx_complete() && z1_multiframe_rx_length() == 9) {
+                    uint32_t global_id;
+                    uint32_t timestamp;
+                    uint8_t flags;
+                    
+                    memcpy(&global_id, multiframe_buffer, 4);
+                    memcpy(&timestamp, multiframe_buffer + 4, 4);
+                    flags = multiframe_buffer[8];
+                    
+                    // Extract local neuron ID from global ID
+                    uint16_t local_id = global_id & 0xFFFF;
+                    
+                    printf("[Node %d] 🧠 Received spike for neuron %d (global 0x%08X)\n", 
+                           Z1_NODE_ID, local_id, (unsigned int)global_id);
+                    
+                    // Inject spike into local neuron
+                    z1_snn_inject_input(local_id, 1.0f);
+                    
+                    z1_multiframe_rx_reset();
+                } else {
+                    printf("[Node %d] ⚠️  Received incomplete spike data\n", Z1_NODE_ID);
+                }
             }
             break;
             
