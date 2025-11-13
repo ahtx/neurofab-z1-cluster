@@ -1,92 +1,67 @@
-/**
- * Hardware Configuration
- * 
- * Board-specific hardware configuration and initialization
- */
+/* hw_config.c
+Copyright 2021 Carl John Kugler III
 
-#include <stdio.h>
-#include "pico/stdlib.h"
-#include "hardware/gpio.h"
-#include "hardware/clocks.h"
-#include "hardware/vreg.h"
+Licensed under the Apache License, Version 2.0 (the License); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
 
-// LED pin
-#define LED_PIN 25
+   http://www.apache.org/licenses/LICENSE-2.0
 
-// Hardware configuration
-typedef struct {
-    uint8_t node_id;
-    uint8_t backplane_id;
-    bool has_psram;
-    bool has_display;
-} hw_config_t;
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an AS IS BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+*/
 
-static hw_config_t hw_config = {
-    .node_id = 0,
-    .backplane_id = 0,
-    .has_psram = true,
-    .has_display = true
+/*
+This file should be tailored to match the hardware design.
+Configured for SPI1 on RP2350 with SD card on GPIO40-43
+*/
+
+#include "ff.h"  // Include FatFS headers first
+#include "hw_config.h"
+
+/* Configuration of hardware SPI object */
+static spi_t spi = {
+    .hw_inst = spi1,  // SPI1 component for RP2350
+    .sck_gpio = 42,   // GPIO42 - CLK
+    .mosi_gpio = 43,  // GPIO43 - MOSI  
+    .miso_gpio = 40,  // GPIO40 - MISO
+    .baud_rate = 125 * 1000 * 1000 / 4  // 31250000 Hz
 };
 
-/**
- * Initialize hardware configuration
- */
-void hw_config_init(void) {
-    printf("Initializing hardware configuration...\n");
-    
-    // Initialize LED
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
-    gpio_put(LED_PIN, 1);
-    
-    // Read node ID from GPIO pins or DIP switches
-    // TODO: Implement node ID detection
-    
-    printf("Hardware configuration:\n");
-    printf("  Node ID: %d\n", hw_config.node_id);
-    printf("  Backplane ID: %d\n", hw_config.backplane_id);
-    printf("  PSRAM: %s\n", hw_config.has_psram ? "Yes" : "No");
-    printf("  Display: %s\n", hw_config.has_display ? "Yes" : "No");
-}
+/* SPI Interface */
+static sd_spi_if_t spi_if = {
+    .spi = &spi,        // Pointer to the SPI driving this card
+    .ss_gpio = 41       // GPIO41 - CS (Chip Select)
+};
+
+/* Configuration of the SD Card socket object */
+static sd_card_t sd_card = {
+    .type = SD_IF_SPI,
+    .spi_if_p = &spi_if  // Pointer to the SPI interface driving this card
+};
+
+/* ********************************************************************** */
+
+size_t sd_get_num() { return 1; }
 
 /**
- * Get node ID
+ * @brief Get a pointer to an SD card object by its number.
+ *
+ * @param[in] num The number of the SD card to get.
+ *
+ * @return A pointer to the SD card object, or NULL if the number is invalid.
  */
-uint8_t hw_config_get_node_id(void) {
-    return hw_config.node_id;
+sd_card_t *sd_get_by_num(size_t num) {
+    if (0 == num) {
+        // The number 0 is a valid SD card number.
+        // Return a pointer to the sd_card object.
+        return &sd_card;
+    } else {
+        // The number is invalid. Return NULL.
+        return NULL;
+    }
 }
 
-/**
- * Get backplane ID
- */
-uint8_t hw_config_get_backplane_id(void) {
-    return hw_config.backplane_id;
-}
-
-/**
- * Set LED state
- */
-void hw_config_set_led(bool state) {
-    gpio_put(LED_PIN, state);
-}
-
-/**
- * Toggle LED
- */
-void hw_config_toggle_led(void) {
-    gpio_put(LED_PIN, !gpio_get(LED_PIN));
-}
-
-/**
- * Check if PSRAM is available
- */
-bool hw_config_has_psram(void) {
-    return hw_config.has_psram;
-}
-
-/**
- * Check if display is available
- */
-bool hw_config_has_display(void) {
-    return hw_config.has_display;
-}
+/* [] END OF FILE */
