@@ -305,6 +305,9 @@ class SNNEngineSTDP:
             self.stats['simulation_steps'] += 1
             
             # Process incoming spikes
+            if self.node_id == 14 and len(self.incoming_spikes) > 0:
+                spike_ids = [s.neuron_id for s in list(self.incoming_spikes)[:5]]
+                print(f"[SNN-{self.node_id}] Processing {len(self.incoming_spikes)} incoming spikes: {spike_ids}...")
             while self.incoming_spikes:
                 spike = self.incoming_spikes.popleft()
                 self._process_spike(spike)
@@ -345,6 +348,8 @@ class SNNEngineSTDP:
         # Don't process spikes from neurons on this node (avoid loops)
         # Check if this spike is from a local neuron
         local_neuron_globals = {n.global_id for n in self.neurons.values()}
+        if self.node_id == 14 and source_id == 0:
+            print(f"[SNN-{self.node_id}] Filter check for spike {source_id}: local_globals={sorted(list(local_neuron_globals))[:10]}..., contains_0={0 in local_neuron_globals}")
         if self.node_id == 0:
             print(f"[SNN-{self.node_id}] Filter check: source_id={source_id}, local_globals={list(local_neuron_globals)[:5]}")
         if source_id in local_neuron_globals:
@@ -622,6 +627,8 @@ class ClusterSNNCoordinator:
                 })
                 
                 # Send to all engines (they'll filter based on their synapses)
+                if spike.neuron_id == 0:
+                    print(f"[COORDINATOR] Distributing spike 0 to {len(self.engines)} engines: {sorted(self.engines.keys())}")
                 for engine in self.engines.values():
                     engine.incoming_spikes.append(spike)
             

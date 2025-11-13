@@ -265,7 +265,7 @@ class SNNCompiler:
             weight = min(127, int(weight_float * 63.5))
         
         # Add synapse (limit to max synapses)
-        if len(target_neuron.synapses) < 60:
+        if len(target_neuron.synapses) < 54:
             target_neuron.synapses.append((source_id, weight))
     
     def _generate_fully_connected(self, source_start: int, source_end: int,
@@ -331,7 +331,7 @@ class SNNCompiler:
                     weight = min(127, int(weight_float * 63.5))
                     
                     # Add synapse (limit to max synapses)
-                    if len(target_neuron.synapses) < 60:
+                    if len(target_neuron.synapses) < 54:
                         target_neuron.synapses.append((source_id, weight))
     
     def _compile_neuron_tables(self) -> Dict[Tuple[str, int], bytes]:

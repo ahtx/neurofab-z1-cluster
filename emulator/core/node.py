@@ -279,16 +279,25 @@ class ComputeNode:
                 entry_data = self.memory.read(addr + offset, 256)
                 
                 # Check if this entry is empty (all zeros)
-                if offset > 0 and all(b == 0 for b in entry_data):
+                is_all_zeros = all(b == 0 for b in entry_data)
+                if offset > 0 and is_all_zeros:
                     # Reached end of table
+                    if self.node_id == 14:
+                        print(f"[Node {self.node_id}] Stopping at offset {offset}: all zeros")
                     break
                 
                 neuron_id = struct.unpack_from('<H', entry_data, 0)[0]
+                
+                # Debug logging for node 14
+                if self.node_id == 14 and offset >= 13*256 and offset <= 15*256:
+                    print(f"[Node {self.node_id}] Offset {offset}: neuron_id={neuron_id}, all_zeros={is_all_zeros}, first_16_bytes={entry_data[:16].hex()}")
                 
                 # Parse neuron entry
                 neuron = self._parse_neuron_entry(entry_data)
                 if neuron:
                     neurons.append(neuron)
+                    if self.node_id == 14 and offset >= 13*256 and offset <= 15*256:
+                        print(f"[Node {self.node_id}] Successfully parsed neuron {neuron.neuron_id} (global={neuron.global_id})")
                 elif offset < 5000:  # Only log first few
                     print(f"[Node {self.node_id}] Failed to parse neuron at offset {offset}")
                 
@@ -322,9 +331,11 @@ class ComputeNode:
             leak_rate, refractory_period_us = \
                 struct.unpack_from('<fI', entry_data, 24)
             
-            # Parse synapses (240 bytes, 60 × 4 bytes)
+            # Parse synapses (216 bytes, 54 × 4 bytes)
             synapses = []
-            for i in range(min(synapse_count, 60)):
+            if self.node_id in [14, 15] and synapse_count > 54:
+                print(f"[Node {self.node_id}] WARNING: synapse_count={synapse_count} exceeds limit of 54!")
+            for i in range(min(synapse_count, 54)):
                 synapse_value = struct.unpack_from('<I', entry_data, 40 + i * 4)[0]
                 source_id = (synapse_value >> 8) & 0xFFFFFF
                 weight = synapse_value & 0xFF
@@ -342,7 +353,9 @@ class ComputeNode:
                 synapses=synapses,
                 global_id=global_id
             )
-        except Exception:
+        except Exception as e:
+            if self.node_id in [14, 15]:
+                print(f"[Node {self.node_id}] Parse exception: {e}")
             return None
     
     def get_info(self) -> Dict:
