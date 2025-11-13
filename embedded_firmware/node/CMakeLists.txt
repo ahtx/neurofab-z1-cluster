@@ -3,6 +3,10 @@
 
 cmake_minimum_required(VERSION 3.13)
 
+# Set platform to RP2350 (Pico 2)
+set(PICO_PLATFORM rp2350)
+set(PICO_BOARD pico2)
+
 # Include Pico SDK
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
@@ -21,7 +25,7 @@ add_executable(z1_node
     psram_rp2350.c
     z1_matrix_bus.c
     ssd1306.c
-    hw_config.c
+    # hw_config.c  # SD card support - requires FatFS library
 )
 
 # Link libraries
@@ -32,8 +36,10 @@ target_link_libraries(z1_node
     hardware_i2c
     hardware_dma
     hardware_pio
+    hardware_pwm
     hardware_timer
     hardware_clocks
+    hardware_gpio
     pico_unique_id
 )
 

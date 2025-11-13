@@ -3,6 +3,10 @@
 
 cmake_minimum_required(VERSION 3.13)
 
+# Set platform to RP2350 (Pico 2)
+set(PICO_PLATFORM rp2350)
+set(PICO_BOARD pico2)
+
 # Include Pico SDK
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 

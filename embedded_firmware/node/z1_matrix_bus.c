@@ -722,3 +722,43 @@ bool z1_bus_handle_ping_response(uint8_t sender_node, uint8_t data_received) {
 __attribute__((weak)) void z1_bus_process_command(uint8_t command, uint8_t data) {
     printf("[Z1 Bus] WEAK DEFAULT: Command 0x%02X, Data 0x%02X (no application handler)\n", command, data);
 }
+
+// ============================================================================
+// SNN Engine Compatibility Layer
+// ============================================================================
+
+// Simple message queue for SNN engine (stub implementation)
+// In a full implementation, this would use a circular buffer filled by interrupts
+static z1_bus_message_t message_queue[8];
+static volatile uint8_t queue_head = 0;
+static volatile uint8_t queue_tail = 0;
+
+/**
+ * Receive a message from the bus queue (for SNN engine)
+ * Returns false if queue is empty
+ */
+bool z1_bus_receive(z1_bus_message_t* msg) {
+    if (queue_head == queue_tail) {
+        return false;  // Queue empty
+    }
+    
+    *msg = message_queue[queue_tail];
+    queue_tail = (queue_tail + 1) % 8;
+    return true;
+}
+
+/**
+ * Internal function to queue a received message
+ * Called by interrupt handler or bus processing code
+ */
+void z1_bus_queue_message(uint8_t source_node, uint8_t command, uint8_t data) {
+    uint8_t next_head = (queue_head + 1) % 8;
+    if (next_head == queue_tail) {
+        return;  // Queue full, drop message
+    }
+    
+    message_queue[queue_head].source_node = source_node;
+    message_queue[queue_head].command = command;
+    message_queue[queue_head].data[0] = data;
+    queue_head = next_head;
+}

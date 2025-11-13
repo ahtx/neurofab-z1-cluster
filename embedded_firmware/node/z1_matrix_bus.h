@@ -54,6 +54,14 @@
 #define Z1_CMD_LED_CONTROL  0x70  // Generic LED control
 #define Z1_CMD_PING         0x99  // Ping command (data: 0xA5)
 
+// SNN Engine Commands
+#define Z1_CMD_SNN_SPIKE         0x50  // SNN spike routing command
+#define Z1_CMD_SNN_LOAD_TABLE    0x51  // Load neuron table from PSRAM
+#define Z1_CMD_SNN_START         0x52  // Start SNN execution
+#define Z1_CMD_SNN_STOP          0x53  // Stop SNN execution
+#define Z1_CMD_SNN_INJECT_SPIKE  0x54  // Inject external spike
+#define Z1_CMD_SNN_GET_STATUS    0x55  // Get SNN engine status
+
 // LED Values for generic LED control
 #define Z1_LED_GREEN        0x01
 #define Z1_LED_RED          0x02
@@ -97,5 +105,19 @@ bool z1_discover_nodes_sequential(bool active_nodes_out[16]);
 
 // Callback function - must be implemented by application (node.c)
 extern void z1_bus_process_command(uint8_t command, uint8_t data);
+
+// ============================================================================
+// SNN Engine Compatibility Layer
+// ============================================================================
+
+// Message structure for SNN engine compatibility
+typedef struct {
+    uint8_t source_node;
+    uint8_t command;
+    uint8_t data[16];  // Extended data payload
+} z1_bus_message_t;
+
+// Receive queue for incoming bus messages (for SNN engine)
+bool z1_bus_receive(z1_bus_message_t* msg);
 
 #endif // Z1_MATRIX_BUS_H
