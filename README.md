@@ -101,8 +101,8 @@ To change, edit `w5500_http_server.c` and rebuild firmware.
 # Install dependencies
 pip3 install requests numpy
 
-# Add utilities to PATH
-export PATH=$PATH:$(pwd)/utilities
+# Add tools to PATH
+export PATH=$PATH:$(pwd)/python_tools/bin
 ```
 
 ### First Connection Test
@@ -118,7 +118,7 @@ ping 192.168.1.222
 curl http://192.168.1.222/api/status
 
 # Discover nodes
-python3 utilities/nls.py
+python_tools/bin/nls
 ```
 
 ---
@@ -204,30 +204,34 @@ python3 utilities/nls.py
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `nls.py` | List all nodes | `python3 utilities/nls.py` |
-| `nping.py` | Ping specific node | `python3 utilities/nping.py 0` |
-| `ndeploy.py` | Deploy SNN to cluster | `python3 utilities/ndeploy.py network.json` |
-| `nstart.py` | Start SNN execution | `python3 utilities/nstart.py` |
-| `nstop.py` | Stop SNN execution | `python3 utilities/nstop.py` |
-| `ninject.py` | Inject spike to neuron | `python3 utilities/ninject.py 0 100` |
+| `nls` | List all nodes | `python_tools/bin/nls` |
+| `nping` | Ping specific node | `python_tools/bin/nping 0` |
+| `ncat` | Display node memory | `python_tools/bin/ncat 0 0x20000000 256` |
+| `ncp` | Copy file to node | `python_tools/bin/ncp file.bin 0` |
+| `nstat` | Cluster status | `python_tools/bin/nstat` |
+| `nconfig` | Manage configuration | `python_tools/bin/nconfig` |
+| `nsnn` | SNN management | `python_tools/bin/nsnn deploy network.json` |
+| `nflash` | Flash firmware | `python_tools/bin/nflash node.uf2 0` |
 
 ### Example: Deploy and Run SNN
 
 ```bash
 # 1. Discover nodes
-python3 utilities/nls.py
+python_tools/bin/nls
 
 # 2. Deploy network (example JSON format)
-python3 utilities/ndeploy.py examples/xor_network.json
+python_tools/bin/nsnn deploy examples/xor_network.json
 
 # 3. Start execution
-python3 utilities/nstart.py
+python_tools/bin/nsnn start
 
-# 4. Inject test spike to node 0, neuron 100
-python3 utilities/ninject.py 0 100
+# 4. Inject spike to neuron (via API)
+curl -X POST http://192.168.1.222/api/snn/input \
+  -H "Content-Type: application/json" \
+  -d '{"spikes":[{"node":0,"neuron":100,"value":1.0}]}'
 
 # 5. Stop execution
-python3 utilities/nstop.py
+python_tools/bin/nsnn stop
 ```
 
 ---

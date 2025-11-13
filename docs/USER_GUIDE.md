@@ -212,7 +212,7 @@ pip3 install requests numpy
 
 ```bash
 # Add utilities to PATH
-export PATH=$PATH:/path/to/neurofab-z1-cluster/utilities
+export PATH=$PATH:/path/to/neurofab-z1-cluster/python_tools/bin
 
 # Set controller IP (optional, defaults to 192.168.1.222)
 export Z1_CONTROLLER_IP=192.168.1.222
@@ -221,7 +221,7 @@ export Z1_CONTROLLER_IP=192.168.1.222
 To make permanent, add to `~/.bashrc`:
 
 ```bash
-echo 'export PATH=$PATH:/path/to/neurofab-z1-cluster/utilities' >> ~/.bashrc
+echo 'export PATH=$PATH:/path/to/neurofab-z1-cluster/python_tools/bin' >> ~/.bashrc
 echo 'export Z1_CONTROLLER_IP=192.168.1.222' >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -252,7 +252,7 @@ Expected response:
 ### Discover Nodes
 
 ```bash
-python3 utilities/nls.py
+python_tools/bin/nls
 ```
 
 Expected output:
@@ -269,7 +269,7 @@ Found 4 active nodes:
 
 ```bash
 # Ping node 0
-python3 utilities/nping.py 0
+python_tools/bin/nping 0
 ```
 
 Expected output:
@@ -283,13 +283,13 @@ Round-trip time: 12ms
 
 ## CLI Tools Reference
 
-### nls.py - List Nodes
+### nls - List Nodes
 
 **Description:** Discover and list all active nodes in the cluster.
 
 **Usage:**
 ```bash
-python3 utilities/nls.py [options]
+python_tools/bin/nls [options]
 ```
 
 **Options:**
@@ -298,7 +298,7 @@ python3 utilities/nls.py [options]
 
 **Example:**
 ```bash
-$ python3 utilities/nls.py
+$ python_tools/bin/nls
 Discovering nodes...
 Found 4 active nodes:
   Node 0: READY
@@ -307,13 +307,13 @@ Found 4 active nodes:
   Node 3: READY
 ```
 
-### nping.py - Ping Node
+### nping - Ping Node
 
 **Description:** Test connectivity to a specific node.
 
 **Usage:**
 ```bash
-python3 utilities/nping.py <node_id> [options]
+python_tools/bin/nping <node_id> [options]
 ```
 
 **Arguments:**
@@ -325,20 +325,27 @@ python3 utilities/nping.py <node_id> [options]
 
 **Example:**
 ```bash
-$ python3 utilities/nping.py 0
+$ python_tools/bin/nping 0
 Pinging node 0...
 Response received: 0x42
 Round-trip time: 12ms
 ```
 
-### ndeploy.py - Deploy SNN
+### nsnn - SNN Management
 
-**Description:** Deploy a Spiking Neural Network to the cluster.
+**Description:** Comprehensive SNN management tool for deployment, execution control, and monitoring.
 
 **Usage:**
 ```bash
-python3 utilities/ndeploy.py <network_file> [options]
+python_tools/bin/nsnn <command> [options]
 ```
+
+**Commands:**
+- `deploy <file>` - Deploy SNN from JSON file
+- `start` - Start SNN execution
+- `stop` - Stop SNN execution
+- `status` - Show SNN status
+- `monitor` - Monitor spike activity
 
 **Arguments:**
 - `network_file` - Path to network definition JSON
@@ -349,7 +356,7 @@ python3 utilities/ndeploy.py <network_file> [options]
 
 **Example:**
 ```bash
-$ python3 utilities/ndeploy.py examples/xor_network.json
+$ python_tools/bin/nsnn deploy examples/xor_network.json
 Parsing network definition...
   Total neurons: 256
   Total synapses: 1024
@@ -363,21 +370,9 @@ Deploying to cluster...
 Network deployed successfully!
 ```
 
-### nstart.py - Start SNN Execution
-
-**Description:** Start SNN execution on all nodes.
-
-**Usage:**
+**Start SNN:**
 ```bash
-python3 utilities/nstart.py [options]
-```
-
-**Options:**
-- `-c, --controller IP` - Controller IP address
-
-**Example:**
-```bash
-$ python3 utilities/nstart.py
+$ python_tools/bin/nsnn start
 Starting SNN execution...
   Node 0: Started
   Node 1: Started
@@ -387,18 +382,9 @@ Starting SNN execution...
 SNN execution started on 4 nodes.
 ```
 
-### nstop.py - Stop SNN Execution
-
-**Description:** Stop SNN execution on all nodes.
-
-**Usage:**
+**Stop SNN:**
 ```bash
-python3 utilities/nstop.py [options]
-```
-
-**Example:**
-```bash
-$ python3 utilities/nstop.py
+$ python_tools/bin/nsnn stop
 Stopping SNN execution...
   Node 0: Stopped
   Node 1: Stopped
@@ -408,32 +394,95 @@ Stopping SNN execution...
 SNN execution stopped on 4 nodes.
 ```
 
-### ninject.py - Inject Spike
+### nstat - Cluster Status
 
-**Description:** Inject a spike into a specific neuron.
+**Description:** Display cluster status and statistics.
 
 **Usage:**
 ```bash
-python3 utilities/ninject.py <node_id> <neuron_id> [value] [options]
+python_tools/bin/nstat [options]
 ```
-
-**Arguments:**
-- `node_id` - Target node ID (0-15)
-- `neuron_id` - Local neuron ID (0-1023)
-- `value` - Spike value (default: 1.0)
 
 **Options:**
 - `-c, --controller IP` - Controller IP address
 
 **Example:**
 ```bash
-$ python3 utilities/ninject.py 0 100 1.5
-Injecting spike...
-  Node: 0
-  Neuron: 100
-  Value: 1.5
+$ python_tools/bin/nstat
+Z1 Cluster Status:
+  Controller: 192.168.1.222
+  Active Nodes: 4/16
+  SNN Status: Running
+  Total Spikes: 15847
+```
 
-Spike injected successfully!
+### ncat - Display Node Memory
+
+**Description:** Read and display memory contents from a node.
+
+**Usage:**
+```bash
+python_tools/bin/ncat <node_id> <address> <length> [options]
+```
+
+**Example:**
+```bash
+$ python_tools/bin/ncat 0 0x20000000 256
+Reading 256 bytes from node 0 at 0x20000000...
+[hex dump output]
+```
+
+### ncp - Copy File to Node
+
+**Description:** Copy a file to node memory.
+
+**Usage:**
+```bash
+python_tools/bin/ncp <file> <node_id> [address] [options]
+```
+
+**Example:**
+```bash
+$ python_tools/bin/ncp data.bin 0
+Copying data.bin to node 0...
+Wrote 1024 bytes
+```
+
+### nflash - Flash Firmware
+
+**Description:** Flash firmware to compute nodes.
+
+**Usage:**
+```bash
+python_tools/bin/nflash <firmware_file> <node_id> [options]
+```
+
+**Example:**
+```bash
+$ python_tools/bin/nflash z1_node.uf2 0
+Flashing firmware to node 0...
+Upload complete. Node will reboot.
+```
+
+### nconfig - Manage Configuration
+
+**Description:** Manage multi-backplane cluster configuration.
+
+**Usage:**
+```bash
+python_tools/bin/nconfig <command> [options]
+```
+
+**Commands:**
+- `list` - List backplanes
+- `add` - Add backplane
+- `remove` - Remove backplane
+
+**Example:**
+```bash
+$ python_tools/bin/nconfig list
+Configured backplanes:
+  Backplane 0: 192.168.1.222 (4 nodes)
 ```
 
 ---
@@ -473,18 +522,18 @@ Networks are defined in JSON format:
 
 2. **Deploy to Cluster:**
    ```bash
-   python3 utilities/ndeploy.py my_network.json
+   python_tools/bin/ndeploy my_network.json
    ```
 
 3. **Start Execution:**
    ```bash
-   python3 utilities/nstart.py
+   python_tools/bin/nstart
    ```
 
 4. **Inject Test Inputs:**
    ```bash
-   python3 utilities/ninject.py 0 0 1.0
-   python3 utilities/ninject.py 0 1 1.0
+   python_tools/bin/ninject 0 0 1.0
+   python_tools/bin/ninject 0 1 1.0
    ```
 
 5. **Monitor Activity:**
@@ -493,7 +542,7 @@ Networks are defined in JSON format:
 
 6. **Stop Execution:**
    ```bash
-   python3 utilities/nstop.py
+   python_tools/bin/nstop
    ```
 
 ---
@@ -569,7 +618,7 @@ Full API documentation: [API_REFERENCE.md](API_REFERENCE.md)
 4. Check LED startup sequence (should show R→G→B)
 5. Connect USB and check serial output
 6. Verify node firmware is flashed correctly
-7. Try manual ping: `python3 utilities/nping.py <node_id>`
+7. Try manual ping: `python_tools/bin/nping <node_id>`
 
 ### SNN Deployment Fails
 
@@ -588,7 +637,7 @@ Full API documentation: [API_REFERENCE.md](API_REFERENCE.md)
 **Symptoms:** No inter-node spike activity
 
 **Solutions:**
-1. Verify SNN is started: `python3 utilities/nstart.py`
+1. Verify SNN is started: `python_tools/bin/nstart`
 2. Check synaptic connections in network definition
 3. Verify source and target neurons on different nodes
 4. Monitor serial output for spike routing messages
