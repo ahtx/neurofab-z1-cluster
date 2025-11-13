@@ -373,13 +373,18 @@ neurofab-z1-cluster/
 │   │   ├── z1_protocol.h           # Protocol definitions
 │   │   └── psram_rp2350.c          # PSRAM driver
 │   └── README.md                   # Build instructions
-├── utilities/                      # Python CLI tools
-│   ├── nls.py                      # List nodes
-│   ├── nping.py                    # Ping node
-│   ├── ndeploy.py                  # Deploy SNN
-│   ├── nstart.py                   # Start execution
-│   ├── nstop.py                    # Stop execution
-│   └── ninject.py                  # Inject spike
+├── python_tools/                   # Python CLI tools
+│   ├── bin/                        # Executable scripts
+│   │   ├── nls                     # List nodes
+│   │   ├── nping                   # Ping node
+│   │   ├── ncat                    # Display node memory
+│   │   ├── ncp                     # Copy file to node
+│   │   ├── nstat                   # Cluster status
+│   │   ├── nconfig                 # Configuration management
+│   │   ├── nsnn                    # SNN management
+│   │   └── nflash                  # Flash firmware
+│   ├── lib/                        # Shared libraries
+│   └── examples/                   # Example networks
 ├── docs/                           # Documentation
 │   ├── USER_GUIDE.md
 │   ├── API_REFERENCE.md
