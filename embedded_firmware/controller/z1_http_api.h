@@ -94,7 +94,7 @@ void handle_post_node_memory(http_connection_t* conn, uint8_t node_id, const cha
 void handle_post_node_execute(http_connection_t* conn, uint8_t node_id, const char* body);
 
 // SNN Management Endpoints
-void handle_post_snn_deploy(http_connection_t* conn, const char* body);
+void handle_post_snn_deploy(http_connection_t* conn, const char* body, uint16_t body_length);
 void handle_get_snn_topology(http_connection_t* conn);
 void handle_post_snn_weights(http_connection_t* conn, const char* body);
 void handle_get_snn_activity(http_connection_t* conn, uint32_t duration_ms);

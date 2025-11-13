@@ -27,6 +27,10 @@
 #define Z1_CMD_MEM_WRITE_ACK    0x53  // Write acknowledgment
 #define Z1_CMD_MEM_INFO         0x54  // Query memory info
 
+// Aliases for compatibility
+#define Z1_CMD_MEMORY_READ      Z1_CMD_MEM_READ_REQ
+#define Z1_CMD_MEMORY_WRITE     Z1_CMD_MEM_WRITE
+
 // Bootloader / Firmware Management (0x30-0x3F)
 #define Z1_CMD_FIRMWARE_INFO        0x30  // Get firmware information
 #define Z1_CMD_FIRMWARE_UPLOAD      0x31  // Upload firmware to buffer
@@ -51,6 +55,8 @@
 #define Z1_CMD_SNN_QUERY_ACTIVITY 0x75 // Query spike count
 #define Z1_CMD_SNN_ACTIVITY_RESP 0x76 // Activity response
 #define Z1_CMD_SNN_INPUT_SPIKE  0x77  // Inject input spike
+#define Z1_CMD_SNN_GET_SPIKES   0x78  // Get spike events
+#define Z1_CMD_SNN_INJECT_SPIKE Z1_CMD_SNN_INPUT_SPIKE  // Alias
 
 // Node Management (0x80-0x8F)
 #define Z1_CMD_NODE_INFO_REQ    0x80  // Request node information
@@ -152,6 +158,7 @@ typedef struct {
 // Maximum transfer sizes
 #define Z1_MAX_MEM_TRANSFER     256   // Max bytes per memory transfer
 #define Z1_MAX_TABLE_TRANSFER   128   // Max bytes per table transfer
+#define Z1_FIRMWARE_MAX_SIZE    (2 * 1024 * 1024)  // 2MB max firmware size
 
 // ============================================================================
 // Multi-Frame Transfer Protocol
@@ -314,5 +321,22 @@ static inline void z1_decode_neuron_id(uint32_t global_id,
     *node_id = (global_id >> 16) & 0xFF;
     *local_neuron_id = global_id & 0xFFFF;
 }
+
+// ============================================================================
+// Bus Command Wrapper (for multi-byte commands)
+// ============================================================================
+
+/**
+ * Send command with multi-byte payload to a node
+ * This is a wrapper around the basic bus write for extended commands
+ * 
+ * @param target_node Target node ID
+ * @param command Command byte
+ * @param data Payload data (can be NULL for commands without data)
+ * @param length Payload length in bytes
+ * @return true if successful
+ */
+bool z1_bus_send_command(uint8_t target_node, uint8_t command, 
+                         const uint8_t* data, uint16_t length);
 
 #endif // Z1_PROTOCOL_EXTENDED_H

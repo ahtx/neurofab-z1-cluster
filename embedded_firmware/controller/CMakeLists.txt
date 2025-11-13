@@ -20,8 +20,10 @@ pico_sdk_init()
 
 # Controller firmware executable
 add_executable(z1_controller
+    controller_main.c
     z1_http_api.c
     z1_matrix_bus.c
+    z1_protocol_extended.c
     # Add other controller-specific files here
 )
 
@@ -33,8 +35,10 @@ target_link_libraries(z1_controller
     hardware_i2c
     hardware_dma
     hardware_pio
+    hardware_pwm
     hardware_timer
     hardware_clocks
+    hardware_gpio
     pico_unique_id
     # Add lwIP or other networking library here
 )
